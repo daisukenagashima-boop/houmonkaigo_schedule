@@ -41,6 +41,7 @@ export default function ClientList() {
   const [isSeeding, setIsSeeding] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+  const [sortBy, setSortBy] = useState<'kana' | 'area' | 'default'>('kana');
 
   // Custom visual state overlays to ensure proper execution in iframe sandboxes!
   const [showConfirmSeed, setShowConfirmSeed] = useState(false);
@@ -239,9 +240,30 @@ export default function ClientList() {
     }
   };
 
-  const filteredClients = clients.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const sortedClients = React.useMemo(() => {
+    const list = [...clients];
+    // Filter first
+    const filtered = list.filter(c => 
+      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.furigana && c.furigana.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (c.address && c.address.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    if (sortBy === 'kana') {
+      return filtered.sort((a, b) => {
+        const fa = a.furigana || a.name || '';
+        const fb = b.furigana || b.name || '';
+        return fa.localeCompare(fb, 'ja');
+      });
+    } else if (sortBy === 'area') {
+      return filtered.sort((a, b) => {
+        const aa = a.address || '';
+        const ab = b.address || '';
+        return aa.localeCompare(ab, 'ja');
+      });
+    }
+    return filtered;
+  }, [clients, searchTerm, sortBy]);
 
   return (
     <div className="space-y-6">
@@ -269,104 +291,165 @@ export default function ClientList() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-        <input
-          type="text"
-          placeholder="名前で検索..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-        />
+      {/* Sort Buttons & Search Group */}
+      <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <input
+            type="text"
+            placeholder="お名前、フリガナ、住所などで検索..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-medium text-slate-800 text-sm"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/50">
+          <span className="text-[11px] font-black text-slate-500 px-2.5">並び替え：</span>
+          <button
+            onClick={() => setSortBy('kana')}
+            className={cn(
+              "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all",
+              sortBy === 'kana' ? "bg-white text-emerald-700 shadow-sm font-black" : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
+            )}
+          >
+            あいうえお順
+          </button>
+          <button
+            onClick={() => setSortBy('area')}
+            className={cn(
+              "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all",
+              sortBy === 'area' ? "bg-white text-emerald-700 shadow-sm font-black" : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
+            )}
+          >
+            エリア順
+          </button>
+          <button
+            onClick={() => setSortBy('default')}
+            className={cn(
+              "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all",
+              sortBy === 'default' ? "bg-white text-emerald-700 shadow-sm font-black" : "text-slate-500 hover:text-slate-800 hover:bg-white/40"
+            )}
+          >
+            登録順
+          </button>
+        </div>
       </div>
 
-      {/* Client Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+      {/* Row-by-Row Client Cards */}
+      <div className="space-y-3.5 w-full">
         <AnimatePresence mode="popLayout">
-          {filteredClients.map((client) => (
+          {sortedClients.map((client) => (
             <motion.div
               layout
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
               key={client.id}
-              className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-slate-100 hover:shadow-md transition-all group"
+              className="bg-white p-4 sm:p-5 rounded-2xl shadow-xs border border-slate-100 hover:border-slate-200 transition-all flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 md:gap-6 group relative"
             >
-              <div className="space-y-3 min-w-0">
-                <div className="flex justify-between items-start">
-                  <div className="min-w-0">
-                    {client.furigana && (
-                      <p className="text-[10px] tracking-wider text-emerald-600 font-bold uppercase -mb-0.5">{client.furigana}</p>
-                    )}
-                    <h3 className="text-lg font-bold text-slate-900 truncate">{client.name} 様</h3>
-                    <p className="text-xs md:text-sm text-slate-500 truncate">
-                      {toWareki(client.birthDate)} ({client.age}歳) • {client.gender === 'male' ? '男性' : client.gender === 'female' ? '女性' : 'その他'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button
-                      onClick={() => {
-                        setEditingClient(client);
-                        setIsAdding(true);
-                      }}
-                      className="p-2 text-slate-300 hover:text-emerald-500 transition-colors md:opacity-0 group-hover:opacity-100"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteClientClick(client.id)}
-                      className="p-2 text-slate-300 hover:text-red-500 transition-colors md:opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                {client.address && (
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex items-start gap-2 text-sm text-emerald-600 hover:text-emerald-700 transition-colors group/link"
-                  >
-                    <MapPin className="w-4 h-4 mt-0.5 text-emerald-400 group-hover/link:text-emerald-600 shrink-0" />
-                    <span className="underline underline-offset-2 truncate">{client.address}</span>
-                  </a>
+              {/* Left Column: Client Name */}
+              <div className="md:w-52 shrink-0 flex flex-col justify-center min-w-0">
+                {client.furigana && (
+                  <span className="text-[9px] tracking-wider text-emerald-600 font-extrabold uppercase mb-0.5">
+                    {client.furigana}
+                  </span>
                 )}
-                {client.notes && (
-                  <div className="flex items-start gap-2 text-sm text-slate-600">
-                    <FileText className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />
-                    <span className="line-clamp-2">{client.notes}</span>
-                  </div>
-                )}
-                {client.recurringSchedules && client.recurringSchedules.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5 bg-slate-50/50 p-2.5 rounded-2xl">
-                    <p className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-emerald-500" />
-                      定期訪問スケジュール
-                    </p>
-                    <div className="flex flex-col gap-1">
-                      {client.recurringSchedules.map((sched, idx) => {
-                        const days = sched.daysOfWeek.map(d => DAYS_JP[d] || '').join('・');
-                        const freqText = sched.frequency === 'weekly' ? '毎週' : sched.frequency === 'biweekly_even' ? '隔週(偶数週)' : '隔週(奇数週)';
-                        return (
-                          <div key={idx} className="text-[11px] text-slate-700 font-medium flex items-center gap-1.5 flex-wrap">
-                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-1.5 py-0.5 rounded-md">
-                              {sched.careType}
-                            </span>
-                            <span className="text-slate-500 text-[10px]">
-                              {freqText} {days}曜
-                            </span>
-                            <span className="text-slate-800 font-mono">
-                              {sched.startTime}〜{sched.endTime}
-                            </span>
-                          </div>
-                        );
-                      })}
+                <h3 className="text-base font-black text-slate-900 truncate flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                  {client.name} 様
+                </h3>
+                <span className="text-[11px] text-slate-500 font-bold mt-1">
+                  {toWareki(client.birthDate)} ({client.age}歳) • {client.gender === 'male' ? '男性' : client.gender === 'female' ? '女性' : 'その他'}
+                </span>
+              </div>
+
+              {/* Middle Section: Info & Notes */}
+              <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Address & Note Column */}
+                <div className="space-y-1.5 flex flex-col justify-center">
+                  {client.address && (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-start gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 transition-colors group/link leading-relaxed"
+                    >
+                      <MapPin className="w-3.5 h-3.5 mt-0.5 text-emerald-400 group-hover/link:text-emerald-600 shrink-0" />
+                      <span className="underline underline-offset-2 truncate" title={client.address}>
+                        {client.address}
+                      </span>
+                    </a>
+                  )}
+                  {client.notes && (
+                    <div className="flex items-start gap-1.5 text-xs text-slate-600 leading-relaxed">
+                      <FileText className="w-3.5 h-3.5 mt-0.5 text-slate-400 shrink-0" />
+                      <span className="line-clamp-2" title={client.notes}>{client.notes}</span>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+
+                {/* Recurring Schedule Column */}
+                <div className="flex flex-col justify-center">
+                  {client.recurringSchedules && client.recurringSchedules.length > 0 ? (
+                    <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl space-y-1 max-h-[85px] overflow-y-auto">
+                      <p className="text-[9px] font-black tracking-wider text-slate-400 uppercase flex items-center gap-1 border-b border-slate-100 pb-1">
+                        <Clock className="w-2.5 h-2.5 text-emerald-500" />
+                        定期巡回
+                      </p>
+                      <div className="flex flex-col gap-0.5">
+                        {client.recurringSchedules.map((sched, idx) => {
+                          const days = sched.daysOfWeek.map(d => DAYS_JP[d] || '').join('・');
+                          const freqText = sched.frequency === 'weekly' ? '毎週' : sched.frequency === 'biweekly_even' ? '隔週(偶)' : '隔週(奇)';
+                          return (
+                            <div key={idx} className="text-[10px] text-slate-700 font-bold flex items-center gap-1.5 justify-between">
+                              <div className="flex items-center gap-1 truncate">
+                                <span className={cn(
+                                  "text-[8px] font-black px-1.5 py-0.5 rounded leading-none text-center min-w-[28px]",
+                                  sched.careType === '身体介護' ? "bg-sky-100 text-sky-800" : sched.careType === '生活援助' ? "bg-amber-100 text-amber-800" : "bg-teal-100 text-teal-800"
+                                )}>
+                                  {sched.careType === '身体介護' ? '身体' : sched.careType === '生活援助' ? '生活' : '複合'}
+                                </span>
+                                <span className="text-slate-500 truncate">
+                                  {freqText}({days}曜)
+                                </span>
+                              </div>
+                              <span className="text-slate-800 font-mono tracking-tighter shrink-0 font-extrabold">
+                                {sched.startTime}-{sched.endTime}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-slate-400 text-[11px] flex items-center gap-1.5 justify-center py-2.5 border border-dashed border-slate-200 rounded-xl bg-slate-50/20">
+                      <Clock className="w-3.5 h-3.5 text-slate-300" />
+                      スケジュール未登録
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Actions */}
+              <div className="flex sm:flex-row md:flex-col items-center justify-end gap-1.5 shrink-0 bg-slate-55/10 md:bg-transparent -mx-4 -mb-4 p-2.5 md:p-0 md:m-0 rounded-b-2xl md:rounded-none border-t border-slate-100 md:border-t-0">
+                <button
+                  onClick={() => {
+                    setEditingClient(client);
+                    setIsAdding(true);
+                  }}
+                  className="flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 px-3 py-2 rounded-xl transition-all"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600" />
+                  編集
+                </button>
+                <button
+                  onClick={() => handleDeleteClientClick(client.id)}
+                  className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-red-700 hover:bg-red-50 px-3 py-2 rounded-xl transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-red-500" />
+                  削除
+                </button>
               </div>
             </motion.div>
           ))}

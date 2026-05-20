@@ -123,59 +123,68 @@ function MainLayout() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-100 transition-transform duration-300 lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 w-72 bg-white/95 backdrop-blur-md border-r border-slate-100/80 transition-transform duration-300 lg:translate-x-0 shadow-[4px_0_24px_rgba(15,23,42,0.015)]",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         <div className="h-full flex flex-col p-6">
-          <div className="flex items-center justify-between mb-10 flex-shrink-0">
+          <div className="flex items-center justify-between mb-8 flex-shrink-0">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white">
-                <Home className="w-6 h-6" />
+              <div className="w-10 h-10 bg-gradient-to-tr from-emerald-600 to-teal-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-600/15">
+                <Home className="w-5 h-5" />
               </div>
-              <span className="text-xl font-bold text-slate-900 tracking-tight">ながらかいごhome</span>
+              <div className="flex flex-col">
+                <span className="text-base font-extrabold text-slate-800 tracking-tight leading-4">ながらかいご</span>
+                <span className="text-[10px] text-slate-400 font-bold tracking-widest uppercase mt-0.5">Home Visit Portal</span>
+              </div>
             </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-slate-50 rounded-lg">
+            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 hover:bg-slate-100/50 rounded-xl transition-colors">
               <X className="w-5 h-5 text-slate-400" />
             </button>
           </div>
 
-          <nav className="flex-1 space-y-2 overflow-y-auto">
+          <nav className="flex-1 space-y-1.5 overflow-y-auto pr-1">
             {navItems.map((item) => (
               <button
                 key={item.id}
-                onClick={() => {
+                onClick={(() => {
                   setCurrentView(item.id as View);
                   setIsSidebarOpen(false);
-                }}
+                })}
                 className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-semibold transition-all",
+                  "w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all duration-200 group relative",
                   currentView === item.id
-                    ? "bg-emerald-50 text-emerald-600 shadow-sm shadow-emerald-50"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                 )}
               >
-                <item.icon className="w-5 h-5" />
-                {item.label}
+                <item.icon className={cn(
+                  "w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-105",
+                  currentView === item.id ? "text-emerald-400" : "text-slate-400"
+                )} />
+                <span>{item.label}</span>
+                {currentView === item.id && (
+                  <span className="absolute right-3 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                )}
               </button>
             ))}
           </nav>
 
-          <div className="pt-6 border-t border-slate-100 space-y-4 flex-shrink-0">
-            <div className="flex items-center gap-3 px-2">
-              <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-bold flex-shrink-0">
+          <div className="pt-5 border-t border-slate-100 flex-shrink-0 space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
+              <div className="w-9 h-9 bg-emerald-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0 shadow-sm shadow-emerald-600/10">
                 {profile?.name?.[0]}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-slate-900 truncate">{profile?.name}</p>
-                <p className="text-xs text-slate-500 truncate">{profile?.role === 'admin' ? '管理者' : 'スタッフ'}</p>
+                <p className="text-xs font-bold text-slate-800 truncate leading-4">{profile?.name}</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-0.5 tracking-wider truncate uppercase">{profile?.role === 'admin' ? '管理者' : 'スタッフ'}</p>
               </div>
             </div>
             <button
               onClick={signOut}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-semibold text-red-500 hover:bg-red-50 transition-all"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold text-red-500 hover:bg-red-50 transition-all border border-transparent hover:border-red-100"
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="w-4 h-4" />
               ログアウト
             </button>
           </div>
@@ -184,7 +193,7 @@ function MainLayout() {
 
       {/* Main Content */}
       <main className="flex-1 min-w-0 overflow-y-auto pt-16 lg:pt-0">
-        <div className="max-w-6xl mx-auto p-4 md:p-6 lg:p-10">
+        <div className={cn("mx-auto transition-all", currentView === 'schedule' ? "w-full max-w-none p-4 md:p-6 lg:p-8" : "max-w-6xl p-4 md:p-6 lg:p-10")}>
           <AnimatePresence mode="wait">
             <motion.div
               key={currentView}

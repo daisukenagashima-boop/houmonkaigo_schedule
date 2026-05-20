@@ -4,6 +4,7 @@ import {
   onSnapshot, 
   updateDoc, 
   addDoc,
+  deleteDoc,
   doc 
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -22,7 +23,8 @@ import {
   ChevronRight,
   Plus,
   X,
-  UserPlus
+  UserPlus,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -42,13 +44,44 @@ export default function StaffManagement() {
   useEffect(() => {
     const unsubscribe = onSnapshot(
       collection(db, 'users'),
-      (snapshot) => {
-        setStaff(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile)));
+      async (snapshot) => {
+        const staffData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile));
+        setStaff(staffData);
+
+        // クリーンアップ: 旧名称「長島 大介」が含まれるドキュメントを自動的に最適化
+        for (const member of staffData) {
+          const cleanName = member.name?.replace(/\s+/g, '');
+          if (cleanName === '長島大介') {
+            try {
+              if (member.email === 'daisuke.nagashima@nagarainc.co.jp') {
+                // メールアドレスが一致するユーザーは最新名「長嶋 乃祐」に自動的に名義変更
+                await updateDoc(doc(db, 'users', member.id), { name: '長嶋 乃祐' });
+              } else {
+                // 重複する不活性のアカウントは完全に削除
+                await deleteDoc(doc(db, 'users', member.id));
+              }
+            } catch (err) {
+              console.warn('Failed to auto-cleanup older user name:', err);
+            }
+          }
+        }
       },
       (error) => handleFirestoreError(error, OperationType.LIST, 'users')
     );
     return () => unsubscribe();
   }, []);
+
+  const handleDeleteStaff = async (id: string, name: string) => {
+    const confirmDelete = window.confirm(`本当に「${name}」様をデータベースから完全に削除しますか？`);
+    if (!confirmDelete) return;
+
+    try {
+      await deleteDoc(doc(db, 'users', id));
+      alert(`「${name}」様を削除しました。`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `users/${id}`);
+    }
+  };
 
   const handleUpdateRole = async (id: string, role: 'admin' | 'staff') => {
     try {
@@ -201,6 +234,14 @@ export default function StaffManagement() {
                 title={member.status === 'inactive' ? '有効にする' : '停止する'}
               >
                 {member.status === 'inactive' ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+              </button>
+
+              <button
+                onClick={() => handleDeleteStaff(member.id, member.name)}
+                className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all active:scale-95"
+                title="完全に削除"
+              >
+                <Trash2 className="w-5 h-5" />
               </button>
             </div>
           </motion.div>

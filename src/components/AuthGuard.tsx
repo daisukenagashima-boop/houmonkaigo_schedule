@@ -35,6 +35,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const parsedUser = JSON.parse(savedUser);
         const parsedProfile = JSON.parse(savedProfile);
+        
+        // Ensure "長嶋 乃祐" is updated and synced if email matches daisuke.nagashima@nagarainc.co.jp
+        if (parsedUser.email === 'daisuke.nagashima@nagarainc.co.jp') {
+          parsedProfile.name = '長嶋 乃祐';
+          localStorage.setItem('bypass_profile', JSON.stringify(parsedProfile));
+        }
+
         setUser({
           uid: parsedUser.uid,
           email: parsedUser.email,
@@ -60,13 +67,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (userDoc.exists()) {
-            setProfile({ id: userDoc.id, ...userDoc.data() } as UserProfile);
+            const data = userDoc.data();
+            const finalProfile = { id: userDoc.id, ...data } as UserProfile;
+            
+            // Force rename
+            if (firebaseUser.email === "daisuke.nagashima@nagarainc.co.jp") {
+              finalProfile.name = "長嶋 乃祐";
+              await setDoc(doc(db, 'users', firebaseUser.uid), { name: "長嶋 乃祐" }, { merge: true });
+            }
+            
+            setProfile(finalProfile);
           } else {
             // Create initial profile if it doesn't exist yet
+            const isTargetUser = firebaseUser.email === "daisuke.nagashima@nagarainc.co.jp";
             const newProfile: Omit<UserProfile, 'id'> = {
-              name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'ケアスタッフ',
+              name: isTargetUser ? "長嶋 乃祐" : (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'ケアスタッフ'),
               email: firebaseUser.email || '',
-              role: firebaseUser.email === "daisuke.nagashima@nagarainc.co.jp" ? 'admin' : 'staff',
+              role: isTargetUser ? 'admin' : 'staff',
               createdAt: new Date().toISOString(),
             };
             await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
@@ -108,11 +125,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAnonymous: false,
       } as unknown as User;
 
+      const isTargetUser = email.toLowerCase() === "daisuke.nagashima@nagarainc.co.jp";
+      const finalName = isTargetUser ? "長嶋 乃祐" : name;
+
       const mockProfile: UserProfile = {
         id: uid,
-        name,
+        name: finalName,
         email,
-        role,
+        role: isTargetUser ? 'admin' : role,
         createdAt: new Date().toISOString(),
         phone: "090-1234-5678",
         assignedAreas: ["長柄町", "茂原市"],
@@ -237,7 +257,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     setIsSubmitting(true);
     setAuthError(null);
     try {
-      await loginAsBypassUser("daisuke.nagashima@nagarainc.co.jp", "長島 大介", "admin", "password123");
+      await loginAsBypassUser("daisuke.nagashima@nagarainc.co.jp", "長嶋 乃祐", "admin", "password123");
     } catch (err: any) {
       console.error("Quick access error:", err);
       setAuthError("クイックアクセスに失敗しました: " + err.message);
@@ -271,7 +291,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
               <span>管理者デモとして即時ログインできます</span>
             </div>
             <p className="text-[10px] text-slate-500 leading-normal">
-              OAuthのポップアップ制限に影響されず、60名のダミーデータを一括登録できる「長島大介」管理者アカウントで即座にログイン（自動作成）します。
+              OAuthのポップアップ制限に影響されず、60名のダミーデータを一括登録できる「長嶋乃祐」管理者アカウントで即座にログイン（自動作成）します。
             </p>
             <button
               type="button"

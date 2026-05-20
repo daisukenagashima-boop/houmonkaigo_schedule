@@ -27,6 +27,7 @@ export interface UserProfile {
   phone?: string;
   assignedAreas?: string[];
   status?: 'active' | 'inactive';
+  offDutyDates?: string[];
   createdAt: string;
 }
 

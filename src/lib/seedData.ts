@@ -24,7 +24,7 @@ export async function seedCompleteDemoDatabase(loggedInUserId?: string, loggedIn
   const staffToCreate: Omit<UserProfile, 'id'>[] = [
     // Full-time staff (常勤)
     {
-      name: "長島 大介",
+      name: "長嶋 乃祐",
       email: loggedInUserEmail || "daisuke.nagashima@nagarainc.co.jp",
       role: "admin",
       phone: "090-1234-5678",
@@ -366,30 +366,50 @@ export async function seedCompleteDemoDatabase(loggedInUserId?: string, loggedIn
     console.warn("Failed to seed yesterday's historical records:", err);
   }
 
-  // 7. Seed today's Schedules
+  // 7. Seed exactly 150 Schedules across the current week for the 60 clients
   try {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const todayTimes = ["09:00", "10:30", "11:30", "13:00", "14:30", "15:30", "16:30"];
+    const dates: string[] = [];
+    // Generate dates: 3 days ago to 3 days in the future (7 days total)
+    for (let d = -3; d <= 3; d++) {
+      dates.push(format(subDays(new Date(), d), 'yyyy-MM-dd'));
+    }
+
+    const startTimes = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
+    const endTimes   = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
+    const careTypes: ("身体介護" | "生活援助" | "身体・生活" | "その他")[] = ["身体介護", "生活援助", "身体・生活"];
+
     const schedsBatch = writeBatch(db);
 
-    for (let s = 0; s < 10; s++) {
-      if (!addedClientIds[10 + s]) continue;
-      const isUnassigned = s >= 6; 
-      const caregiverId = isUnassigned ? "" : addedStaffIds[s % addedStaffIds.length];
+    for (let s = 0; s < 150; s++) {
+      const clientId = addedClientIds[s % addedClientIds.length];
+      if (!clientId) continue;
+
+      const date = dates[Math.floor(s / (150 / dates.length)) % dates.length] || todayStr;
       
+      const isUnassigned = s % 12 === 0; // Create some unassigned ones for visual drag & drop practice
+      const caregiverId = isUnassigned ? "" : addedStaffIds[s % addedStaffIds.length];
+
+      const timeIdx = s % startTimes.length;
+      const startTime = startTimes[timeIdx];
+      const endTime = endTimes[timeIdx];
+      const careType = careTypes[s % careTypes.length];
+      const status = date < todayStr ? 'completed' : 'scheduled';
+
       const ref = doc(collection(db, 'schedules'));
       schedsBatch.set(ref, {
-        clientId: addedClientIds[10 + s],
+        clientId,
         caregiverId,
-        date: todayStr,
-        startTime: todayTimes[s % todayTimes.length],
-        endTime: "12:00", 
-        careType: s % 3 === 0 ? "身体介護" : s % 3 === 1 ? "生活援助" : "身体・生活",
-        status: "scheduled"
+        date,
+        startTime,
+        endTime,
+        careType,
+        status
       });
     }
+
     await schedsBatch.commit();
-    console.log("Step 6 Complete: Seeded today's schedules via fast batch.");
+    console.log("Step 6 Complete: Seeded exactly 150 weekly schedules across 60 clients via fast batch.");
   } catch (err) {
     console.warn("Failed to seed schedules:", err);
   }

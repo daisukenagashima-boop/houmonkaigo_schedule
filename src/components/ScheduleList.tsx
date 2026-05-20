@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthGuard';
-import { Schedule, Client } from '../types';
+import { Schedule, Client, UserProfile } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestore';
 import { 
   Calendar, 
@@ -22,7 +22,9 @@ import {
   Briefcase,
   Plus,
   X,
-  Edit2
+  Edit2,
+  Coffee,
+  Sparkles
 } from 'lucide-react';
 import { format, getDay, getWeek } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -37,11 +39,12 @@ export default function ScheduleList({ onSelectSchedule }: ScheduleListProps) {
   const { user, profile } = useAuth();
   const [explicitSchedules, setExplicitSchedules] = useState<Schedule[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
-  const [staff, setStaff] = useState<{ id: string, name: string }[]>([]);
+  const [staff, setStaff] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
-  const [filter, setFilter] = useState<'all' | 'mine'>('mine');
+  const [filter, setFilter] = useState<'all' | 'mine'>('all');
+  const [sortBy, setSortBy] = useState<'kana' | 'area' | 'default'>('kana');
   const [newSchedule, setNewSchedule] = useState({
     clientId: '',
     caregiverId: '',
@@ -106,11 +109,21 @@ export default function ScheduleList({ onSelectSchedule }: ScheduleListProps) {
     const unsubscribeStaff = onSnapshot(
       collection(db, 'users'),
       (snapshot) => {
-        const staffData = snapshot.docs.map(doc => ({ 
-          id: doc.id, 
-          name: doc.data().displayName || doc.data().name || '不明なスタッフ' 
-        }));
-        setStaff(staffData);
+        const staffData = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.displayName || data.name || '不明なスタッフ',
+            email: data.email || '',
+            role: data.role || 'staff',
+            phone: data.phone || '',
+            assignedAreas: data.assignedAreas || [],
+            status: data.status || 'active',
+            offDutyDates: data.offDutyDates || [],
+            createdAt: data.createdAt || ''
+          } as UserProfile;
+        });
+        setStaff(staffData.filter(s => s.status !== 'inactive'));
       },
       (error) => handleFirestoreError(error, OperationType.LIST, 'users')
     );
@@ -164,6 +177,24 @@ export default function ScheduleList({ onSelectSchedule }: ScheduleListProps) {
     filter === 'all' || !s.caregiverId || s.caregiverId === user?.uid
   );
 
+  const sortedClients = React.useMemo(() => {
+    const list = [...clients];
+    if (sortBy === 'kana') {
+      return list.sort((a, b) => {
+        const fa = a.furigana || a.name || '';
+        const fb = b.furigana || b.name || '';
+        return fa.localeCompare(fb, 'ja');
+      });
+    } else if (sortBy === 'area') {
+      return list.sort((a, b) => {
+        const aa = a.address || '';
+        const ab = b.address || '';
+        return aa.localeCompare(ab, 'ja');
+      });
+    }
+    return list;
+  }, [clients, sortBy]);
+
   const handleAddSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !newSchedule.clientId) return;
@@ -211,15 +242,6 @@ export default function ScheduleList({ onSelectSchedule }: ScheduleListProps) {
         <div className="flex items-center gap-3">
           <div className="bg-slate-100 p-1 rounded-xl flex">
             <button
-              onClick={() => setFilter('mine')}
-              className={cn(
-                "px-4 py-1.5 rounded-lg text-xs font-bold transition-all",
-                filter === 'mine' ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              )}
-            >
-              自分の担当
-            </button>
-            <button
               onClick={() => setFilter('all')}
               className={cn(
                 "px-4 py-1.5 rounded-lg text-xs font-bold transition-all",
@@ -227,6 +249,15 @@ export default function ScheduleList({ onSelectSchedule }: ScheduleListProps) {
               )}
             >
               すべて
+            </button>
+            <button
+              onClick={() => setFilter('mine')}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-xs font-bold transition-all",
+                filter === 'mine' ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              自分の担当
             </button>
           </div>
           <button
@@ -239,195 +270,674 @@ export default function ScheduleList({ onSelectSchedule }: ScheduleListProps) {
         </div>
       </div>
 
-      {/* Visual Timeline Grid when 'all' filter is active */}
-      {filter === 'all' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-50 pb-2">
-            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              社内全体スケジュール・空き時間・現在地タイムライン
-            </h2>
-            <span className="text-[10px] text-slate-400">急遽のキャンセル代行の差し込みに最適化</span>
-          </div>
+      {/* Drag & Drop Handlers inside Component */}
+      {(() => {
+        const START_HOUR = 7;
+        const END_HOUR = 21;
+        const HOUR_HEIGHT = 96; // 96px matches the h-24 hour height perfectly
 
-          <div className="space-y-3 pt-2">
-            {/* Rows of caregivers including custom 'Unassigned / 未割当' row */}
-            {staff.map(caregiver => {
-              const assignedSchedules = todaySchedules.filter(s => s.caregiverId === caregiver.id);
-              return (
-                <div key={caregiver.id} className="grid grid-cols-12 items-center gap-2 p-2 rounded-xl hover:bg-slate-50 transition-all border border-transparent hover:border-slate-100/50">
-                  <div className="col-span-3 text-xs font-bold text-slate-700 truncate flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{caregiver.name}</span>
-                  </div>
-                  <div className="col-span-9 flex items-center gap-1 overflow-x-auto py-1">
-                    {assignedSchedules.length > 0 ? (
-                      assignedSchedules.map(sched => (
-                        <div
-                          key={sched.id}
-                          className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-lg text-[10px] flex-shrink-0 flex items-center gap-1"
-                        >
-                          <span className="font-bold">{sched.startTime}</span>
-                          <span>{clients.find(c => c.id === sched.clientId)?.name || '...'}様 ({sched.careType})</span>
-                        </div>
-                      ))
-                    ) : (
-                      <span className="text-[10px] text-slate-300 italic">本日稼働時間なし・空き枠対応可能</span>
-                    )}
-                  </div>
-                </div>
+        const parseTimeToMinutes = (timeStr: string): number => {
+          if (!timeStr) return 0;
+          const [h, m] = timeStr.split(':').map(Number);
+          return (h || 0) * 60 + (m || 0);
+        };
+
+        const getPositionedSchedules = (columnSchedules: Schedule[]) => {
+          const sorted = [...columnSchedules].sort((a, b) => a.startTime.localeCompare(b.startTime));
+          const clusters: Schedule[][] = [];
+
+          sorted.forEach(sch => {
+            const mStart = parseTimeToMinutes(sch.startTime);
+            const mEnd = parseTimeToMinutes(sch.endTime);
+
+            let placed = false;
+            for (const cluster of clusters) {
+              const overlaps = cluster.some(cSch => {
+                const cStart = parseTimeToMinutes(cSch.startTime);
+                const cEnd = parseTimeToMinutes(cSch.endTime);
+                return mStart < cEnd && mEnd > cStart;
+              });
+
+              if (overlaps) {
+                cluster.push(sch);
+                placed = true;
+                break;
+              }
+            }
+
+            if (!placed) {
+              clusters.push([sch]);
+            }
+          });
+
+          const positioned: {
+            schedule: Schedule;
+            top: number;
+            height: number;
+            leftPercent: number;
+            widthPercent: number;
+          }[] = [];
+
+          clusters.forEach(cluster => {
+            const lanes: Schedule[][] = [];
+
+            cluster.forEach(sch => {
+              const mStart = parseTimeToMinutes(sch.startTime);
+              const mEnd = parseTimeToMinutes(sch.endTime);
+
+              let laneIndex = -1;
+              for (let i = 0; i < lanes.length; i++) {
+                const hasOverlap = lanes[i].some(lSch => {
+                  const lStart = parseTimeToMinutes(lSch.startTime);
+                  const lEnd = parseTimeToMinutes(lSch.endTime);
+                  return mStart < lEnd && mEnd > lStart;
+                });
+
+                if (!hasOverlap) {
+                  laneIndex = i;
+                  break;
+                }
+              }
+
+              if (laneIndex === -1) {
+                lanes.push([sch]);
+                laneIndex = lanes.length - 1;
+              } else {
+                lanes[laneIndex].push(sch);
+              }
+
+              (sch as any)._tempLaneIndex = laneIndex;
+            });
+
+            const totalLanes = lanes.length;
+
+            cluster.forEach(sch => {
+              const laneIndex = (sch as any)._tempLaneIndex;
+              delete (sch as any)._tempLaneIndex;
+
+              const mStart = parseTimeToMinutes(sch.startTime);
+              const mEnd = parseTimeToMinutes(sch.endTime);
+
+              const startMinutesFromTimelineStart = Math.max(0, mStart - START_HOUR * 60);
+              const durationMinutes = Math.max(15, mEnd - mStart);
+
+              const top = startMinutesFromTimelineStart * (96 / 60);
+              const height = durationMinutes * (96 / 60);
+
+              const widthPercent = 100 / totalLanes;
+              const leftPercent = laneIndex * widthPercent;
+
+              positioned.push({
+                schedule: sch,
+                top,
+                height,
+                leftPercent,
+                widthPercent
+              });
+            });
+          });
+
+          return positioned;
+        };
+
+        const handleDrop = async (scheduleId: string, targetCaregiverId: string) => {
+          if (!scheduleId) return;
+
+          try {
+            const schedule = todaySchedules.find(s => s.id === scheduleId);
+            if (!schedule) return;
+
+            const targetCaregiver = staff.find(s => s.id === targetCaregiverId);
+            if (targetCaregiver && targetCaregiver.offDutyDates?.includes(todayStr)) {
+              const confirmOverrule = window.confirm(
+                `警告: ${targetCaregiver.name}様は本日お休み（休暇設定）です。本当にこの予定を割り当てますか？`
               );
-            })}
+              if (!confirmOverrule) {
+                return;
+              }
+            }
 
-            {/* Unassigned row */}
-            {todaySchedules.filter(s => !s.caregiverId).length > 0 && (
-              <div className="grid grid-cols-12 items-center gap-2 p-2 bg-amber-50/50 rounded-xl border border-amber-150">
-                <div className="col-span-3 text-xs font-bold text-amber-700 truncate flex items-center gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
-                  <span>未割り当て (差配待ち)</span>
-                </div>
-                <div className="col-span-9 flex items-center gap-1 overflow-x-auto py-1">
-                  {todaySchedules.filter(s => !s.caregiverId).map(sched => (
-                    <div
-                      key={sched.id}
-                      className="px-2.5 py-1 bg-amber-100 text-amber-900 border border-amber-200 rounded-lg text-[10px] flex-shrink-0 flex items-center gap-1"
-                    >
-                      <span className="font-bold">{sched.startTime}</span>
-                      <span>{clients.find(c => c.id === sched.clientId)?.name || '...'}様 ({sched.careType})</span>
+            if (schedule.id.startsWith('recurring-')) {
+              await addDoc(collection(db, 'schedules'), {
+                clientId: schedule.clientId,
+                caregiverId: targetCaregiverId,
+                date: todayStr,
+                startTime: schedule.startTime,
+                endTime: schedule.endTime,
+                careType: schedule.careType,
+                status: 'scheduled'
+              });
+            } else {
+              await updateDoc(doc(db, 'schedules', schedule.id), {
+                caregiverId: targetCaregiverId
+              });
+            }
+          } catch (err) {
+            console.error("Drop change error:", err);
+            handleFirestoreError(err, OperationType.UPDATE, `schedules/${scheduleId}`);
+          }
+        };
+
+        const handleToggleOffDuty = async (caregiver: UserProfile) => {
+          if (profile?.role !== 'admin') {
+            alert("お休みの設定（トグル）は管理者アカウントのみ実行可能です。");
+            return;
+          }
+          const currentOffDutyArr = caregiver.offDutyDates || [];
+          let updatedArr: string[];
+          const isCurrentlyOff = currentOffDutyArr.includes(todayStr);
+
+          if (isCurrentlyOff) {
+            updatedArr = currentOffDutyArr.filter(d => d !== todayStr);
+          } else {
+            updatedArr = [...currentOffDutyArr, todayStr];
+          }
+
+          try {
+            await updateDoc(doc(db, 'users', caregiver.id), {
+              offDutyDates: updatedArr
+            });
+          } catch (err) {
+            console.error("Failed to toggle off duty:", err);
+            alert("休暇設定の更新に失敗しました。");
+          }
+        };
+
+        return (
+          <>
+            {/* Visual Timeline Grid when 'all' filter is active */}
+            {filter === 'all' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div className="space-y-0.5">
+                    <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                      担当ヘルパー別訪問割当盤
+                    </h2>
+                    <p className="text-xs text-slate-400 font-medium">
+                      💡 予定カードをドラッグ＆ドロップして担当ヘルパーを変更することができます。お休み中のスタッフに予定をドラッグした場合は警告が表示されます。
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs font-bold text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded bg-sky-50 border border-sky-200 block" />
+                      <span>身体介護</span>
                     </div>
-                  ))}
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded bg-amber-50 border border-amber-200 block" />
+                      <span>生活援助</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded bg-teal-55 border border-teal-200 block" />
+                      <span>複合（身体・生活）</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* The Grid Board Container */}
+                <div className="border border-slate-200 rounded-2xl overflow-hidden flex flex-col bg-slate-50/25 max-w-full">
+                  {/* Sticky Scrollable Board area */}
+                  <div className="overflow-x-auto select-none scrollbar-thin">
+                    <div className="min-w-[1250px] flex flex-col">
+                      
+                      {/* Column Header Titles */}
+                      <div className="flex bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-600 h-12">
+                        {/* Top-left Corner header */}
+                        <div className="w-24 shrink-0 border-r border-slate-250 flex items-center justify-center sticky left-0 bg-slate-100 z-30 font-black">
+                          時間帯
+                        </div>
+
+                        {/* Unassigned column */}
+                        <div className="w-48 shrink-0 border-r border-slate-200 flex items-center justify-center bg-amber-50/40 text-amber-950 font-black gap-1.5">
+                          <span>⚠️ 担当未指定</span>
+                          <span className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-full">
+                            {todaySchedules.filter(s => !s.caregiverId).length}
+                          </span>
+                        </div>
+
+                        {/* Staff columns */}
+                        {staff.map(member => {
+                          const isMemberOff = member.offDutyDates?.includes(todayStr);
+                          return (
+                            <div 
+                              key={member.id} 
+                              onClick={() => handleToggleOffDuty(member)}
+                              className={cn(
+                                "w-48 shrink-0 border-r border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-200/50 transition-colors relative group",
+                                isMemberOff ? "bg-red-50 text-red-700" : "bg-slate-100"
+                              )}
+                            >
+                              <span className="font-bold text-slate-800 group-hover:text-emerald-700">
+                                {member.name}
+                              </span>
+                              <span className={cn(
+                                "text-[9px] font-bold px-1.5 py-0.5 rounded-md mt-0.5 whitespace-nowrap",
+                                isMemberOff 
+                                  ? "bg-red-100 text-red-800" 
+                                  : member.role === 'admin' 
+                                    ? "bg-emerald-100 text-emerald-800" 
+                                    : "bg-slate-200 text-slate-600"
+                              )}>
+                                {isMemberOff ? '😴 休暇設定中' : member.role === 'admin' ? '管理者' : '一般ヘルパー'}
+                              </span>
+                              {profile?.role === 'admin' && (
+                                <span className="absolute bottom-0 text-[7px] text-slate-405 group-hover:block hidden font-medium pb-0.5">
+                                  クリックで公休切替
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Timings columns with absolute schedule cards (Google Calendar style) */}
+                      <div className="flex bg-white relative" style={{ height: `${(END_HOUR - START_HOUR) * 96}px` }}>
+                        
+                        {/* Vertical timeline scale column */}
+                        <div className="w-24 shrink-0 bg-slate-100 border-r border-slate-250 flex flex-col sticky left-0 z-30 shadow-[1px_0_2px_rgba(0,0,0,0.02)]">
+                          {Array.from({ length: END_HOUR - START_HOUR }).map((_, hourOffset) => {
+                            const h = START_HOUR + hourOffset;
+                            const timeLabel = `${String(h).padStart(2, '0')}:00`;
+                            return (
+                              <div 
+                                key={hourOffset} 
+                                className="border-b border-slate-150 flex items-center justify-center font-bold text-slate-700 text-xs bg-slate-100"
+                                style={{ height: '96px' }}
+                              >
+                                {timeLabel}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Unassigned column body containing drop zones and absolute cards */}
+                        <div 
+                          className="w-48 shrink-0 border-r border-slate-200 bg-amber-50/5 relative"
+                          style={{ height: `${(END_HOUR - START_HOUR) * 96}px` }}
+                        >
+                          {/* Hour lines container */}
+                          {Array.from({ length: END_HOUR - START_HOUR }).map((_, hourOffset) => (
+                            <div 
+                              key={hourOffset} 
+                              className="border-b border-slate-150 relative bg-white/70"
+                              style={{ height: '96px' }}
+                            />
+                          ))}
+
+                          {/* Invisible hourly drop zones */}
+                          {Array.from({ length: END_HOUR - START_HOUR }).map((_, hourOffset) => {
+                            const h = START_HOUR + hourOffset;
+                            return (
+                              <div
+                                key={hourOffset}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.dataTransfer.dropEffect = 'move';
+                                }}
+                                onDrop={async (e) => {
+                                  e.preventDefault();
+                                  const schedId = e.dataTransfer.getData("text/plain");
+                                  if (schedId) {
+                                    try {
+                                      const schedule = todaySchedules.find(s => s.id === schedId);
+                                      if (schedule) {
+                                        const newStartHour = String(h).padStart(2, '0');
+                                        const [origSh, origSm] = schedule.startTime.split(':');
+                                        const newStartTime = `${newStartHour}:${origSm || '00'}`;
+                                        
+                                        const [origEh, origEm] = schedule.endTime.split(':');
+                                        const durationHours = parseInt(origEh) - parseInt(origSh);
+                                        const newEndHour = String(parseInt(newStartHour) + durationHours).padStart(2, '0');
+                                        const newEndTime = `${newEndHour}:${origEm || '00'}`;
+
+                                        if (schedule.id.startsWith('recurring-')) {
+                                          await addDoc(collection(db, 'schedules'), {
+                                            clientId: schedule.clientId,
+                                            caregiverId: '',
+                                            date: todayStr,
+                                            startTime: newStartTime,
+                                            endTime: newEndTime,
+                                            careType: schedule.careType,
+                                            status: 'scheduled'
+                                          });
+                                        } else {
+                                          await updateDoc(doc(db, 'schedules', schedule.id), {
+                                            caregiverId: '',
+                                            startTime: newStartTime,
+                                            endTime: newEndTime
+                                          });
+                                        }
+                                      }
+                                    } catch (err) {
+                                      console.error(err);
+                                    }
+                                  }
+                                }}
+                                className="absolute left-0 right-0 hover:bg-amber-550/[0.04] transition-colors z-0"
+                                style={{ top: `${hourOffset * 96}px`, height: '96px' }}
+                              />
+                            );
+                          })}
+
+                          {/* Placed Cards (Unassigned) */}
+                          {getPositionedSchedules(todaySchedules.filter(s => !s.caregiverId)).map(pos => {
+                            const schedule = pos.schedule;
+                            const client = clients.find(c => c.id === schedule.clientId);
+                            const isCompleted = schedule.status === 'completed';
+                            const isPhysical = schedule.careType === '身体介護';
+                            const isLifeSupport = schedule.careType === '生活援助';
+                            const isCoexist = schedule.careType === '身体・生活';
+
+                            return (
+                              <div
+                                key={schedule.id}
+                                draggable={!isCompleted}
+                                onDragStart={(e) => {
+                                  e.stopPropagation();
+                                  e.dataTransfer.setData("text/plain", schedule.id);
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectSchedule(schedule);
+                                }}
+                                style={{
+                                  top: `${pos.top}px`,
+                                  height: `${pos.height - 2}px`,
+                                  left: `calc(${pos.leftPercent}% + 2px)`,
+                                  width: `calc(${pos.widthPercent}% - 4px)`,
+                                }}
+                                className={cn(
+                                  "absolute text-[11px] p-2 rounded-xl border border-l-[3.5px] flex flex-col justify-between group/item transition-shadow bg-white shadow-xs z-10 select-none overflow-hidden",
+                                  isCompleted ? "opacity-60 border-slate-200 border-l-slate-400 text-slate-500 cursor-default" :
+                                  isPhysical ? "border-sky-150 border-l-sky-500 text-sky-950 cursor-grab active:cursor-grabbing hover:shadow-xs" :
+                                  isLifeSupport ? "border-amber-100 border-l-amber-500 text-amber-950 cursor-grab active:cursor-grabbing hover:shadow-xs" :
+                                  "border-teal-100 border-l-teal-500 text-teal-950 cursor-grab active:cursor-grabbing hover:shadow-xs"
+                                )}
+                              >
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between font-bold text-[9px] text-slate-450 leading-none">
+                                    <span>{schedule.startTime} - {schedule.endTime}</span>
+                                    {isCompleted ? (
+                                      <span className="text-[8px] text-emerald-600 bg-emerald-50 px-1 rounded font-black scale-90">完了</span>
+                                    ) : (
+                                      <span className="scale-90 font-semibold">{schedule.careType === '身体介護' ? '身体' : schedule.careType === '生活援助' ? '生活' : '複合'}</span>
+                                    )}
+                                  </div>
+                                  <div className="font-extrabold text-slate-900 leading-tight truncate">
+                                    {client?.name || '利用対象者'} 様
+                                  </div>
+                                </div>
+                                <div className="text-[9px] text-slate-400 truncate leading-none">
+                                  📍 {client?.address?.split('針ヶ谷')?.[1] || client?.address || '長柄町'}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Staff columns body containing drop zones and absolute cards */}
+                        {staff.map(member => {
+                          const memberSchedules = todaySchedules.filter(s => s.caregiverId === member.id);
+                          const isMemberOff = member.offDutyDates?.includes(todayStr);
+
+                          return (
+                            <div
+                              key={member.id}
+                              className={cn(
+                                "w-48 shrink-0 border-r border-slate-200 relative",
+                                isMemberOff ? "bg-red-50/5 pointer-events-none opacity-50" : "bg-white"
+                              )}
+                              style={{ height: `${(END_HOUR - START_HOUR) * 96}px` }}
+                            >
+                              {/* Background lines representing hours */}
+                              {Array.from({ length: END_HOUR - START_HOUR }).map((_, hourOffset) => (
+                                <div 
+                                  key={hourOffset} 
+                                  className="border-b border-slate-150"
+                                  style={{ height: '96px' }}
+                                />
+                              ))}
+
+                              {/* Drop zones for each hour slot */}
+                              {!isMemberOff && Array.from({ length: END_HOUR - START_HOUR }).map((_, hourOffset) => {
+                                const h = START_HOUR + hourOffset;
+                                return (
+                                  <div
+                                    key={hourOffset}
+                                    onDragOver={(e) => {
+                                      e.preventDefault();
+                                      e.dataTransfer.dropEffect = 'move';
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      const schedId = e.dataTransfer.getData("text/plain");
+                                      if (schedId) {
+                                        const schedule = todaySchedules.find(s => s.id === schedId);
+                                        if (schedule) {
+                                          const newStartHour = String(h).padStart(2, '0');
+                                          const [origSh, origSm] = schedule.startTime.split(':');
+                                          const newStartTime = `${newStartHour}:${origSm || '00'}`;
+
+                                          const [origEh, origEm] = schedule.endTime.split(':');
+                                          const durationHours = parseInt(origEh) - parseInt(origSh);
+                                          const newEndHour = String(parseInt(newStartHour) + durationHours).padStart(2, '0');
+                                          const newEndTime = `${newEndHour}:${origEm || '00'}`;
+
+                                          handleDrop(schedId, member.id).then(async () => {
+                                            if (!schedule.id.startsWith('recurring-')) {
+                                              await updateDoc(doc(db, 'schedules', schedule.id), {
+                                                startTime: newStartTime,
+                                                endTime: newEndTime
+                                              });
+                                            }
+                                          });
+                                        }
+                                      }
+                                    }}
+                                    className="absolute left-0 right-0 hover:bg-emerald-500/[0.04] transition-colors z-0"
+                                    style={{ top: `${hourOffset * 96}px`, height: '96px' }}
+                                  />
+                                );
+                              })}
+
+                              {/* Absolutely positioned cards (Caregiver assigned) */}
+                              {!isMemberOff && getPositionedSchedules(memberSchedules).map(pos => {
+                                const schedule = pos.schedule;
+                                const client = clients.find(c => c.id === schedule.clientId);
+                                const isCompleted = schedule.status === 'completed';
+                                const isPhysical = schedule.careType === '身体介護';
+                                const isLifeSupport = schedule.careType === '生活援助';
+                                const isCoexist = schedule.careType === '身体・生活';
+
+                                return (
+                                  <div
+                                    key={schedule.id}
+                                    draggable={!isCompleted}
+                                    onDragStart={(e) => {
+                                      e.stopPropagation();
+                                      e.dataTransfer.setData("text/plain", schedule.id);
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectSchedule(schedule);
+                                    }}
+                                    style={{
+                                      top: `${pos.top}px`,
+                                      height: `${pos.height - 2}px`,
+                                      left: `calc(${pos.leftPercent}% + 2px)`,
+                                      width: `calc(${pos.widthPercent}% - 4px)`,
+                                    }}
+                                    className={cn(
+                                      "absolute text-[11px] p-2 rounded-xl border border-l-[3.5px] flex flex-col justify-between group/item transition-shadow bg-white shadow-xs z-10 select-none overflow-hidden",
+                                      isCompleted ? "opacity-60 border-slate-200 border-l-slate-400 text-slate-500 cursor-default" :
+                                      isPhysical ? "border-sky-150 border-l-sky-500 text-sky-950 cursor-grab active:cursor-grabbing hover:shadow-xs" :
+                                      isLifeSupport ? "border-amber-100 border-l-amber-500 text-amber-950 cursor-grab active:cursor-grabbing hover:shadow-xs" :
+                                      "border-teal-100 border-l-teal-500 text-teal-950 cursor-grab active:cursor-grabbing hover:shadow-xs"
+                                    )}
+                                  >
+                                    <div className="space-y-1">
+                                      <div className="flex items-center justify-between font-bold text-[9px] text-slate-450 leading-none">
+                                        <span>{schedule.startTime} - {schedule.endTime}</span>
+                                        {isCompleted ? (
+                                          <span className="text-[8px] text-emerald-600 bg-emerald-50 px-1 rounded font-black scale-90">完了</span>
+                                        ) : (
+                                          <span className="scale-90 font-semibold">{schedule.careType === '身体介護' ? '身体' : schedule.careType === '生活援助' ? '生活' : '複合'}</span>
+                                        )}
+                                      </div>
+                                      <div className="font-extrabold text-slate-900 leading-tight truncate">
+                                        {client?.name || '利用対象者'} 様
+                                      </div>
+                                    </div>
+                                    <div className="text-[9px] text-slate-400 truncate leading-none">
+                                      📍 {client?.address?.split('針ヶ谷')?.[1] || client?.address || '長柄町'}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+
+                      </div>
+
+                    </div>
+                  </div>
+
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
 
-      <div className="space-y-4">
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : filteredSchedules.length > 0 ? (
-          filteredSchedules.map((schedule) => {
-            const client = clients.find(c => c.id === schedule.clientId);
-            const isCompleted = schedule.status === 'completed';
-
-            return (
-              <motion.div
-                key={schedule.id}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                onClick={() => !isCompleted && onSelectSchedule(schedule)}
-                role="button"
-                tabIndex={isCompleted ? -1 : 0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    if (!isCompleted) onSelectSchedule(schedule);
-                  }
-                }}
-                className={cn(
-                  "w-full text-left bg-white rounded-3xl p-4 md:p-6 shadow-sm border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer",
-                  isCompleted ? "opacity-60 border-slate-100 cursor-default" : "border-slate-100 hover:border-emerald-200 hover:shadow-md"
-                )}
-              >
-                <div className="flex items-center gap-4 md:gap-6 min-w-0">
-                  <div className={cn(
-                    "w-12 h-12 md:w-16 md:h-16 rounded-2xl flex flex-col items-center justify-center font-bold flex-shrink-0",
-                    isCompleted ? "bg-slate-100 text-slate-400" : "bg-emerald-50 text-emerald-600"
-                  )}>
-                    <Clock className="w-4 h-4 md:w-5 md:h-5 mb-0.5 md:mb-1" />
-                    <span className="text-[10px] md:text-xs">{schedule.startTime}</span>
+            {/* Individual Standard List View when 'mine' filter is active (ideal for mobile checklisting) */}
+            {filter === 'mine' && (
+              <div className="space-y-4">
+                {loading ? (
+                  <div className="flex justify-center py-12">
+                    <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
                   </div>
-                  
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base md:text-lg font-bold text-slate-900 truncate">
-                        {client?.name || '読み込み中...'} 様
-                      </h3>
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase whitespace-nowrap",
-                        schedule.careType === '身体介護' ? "bg-red-50 text-red-600" : 
-                        schedule.careType === '生活援助' ? "bg-emerald-50 text-emerald-600" : 
-                        "bg-slate-100 text-slate-600"
-                      )}>
-                        {schedule.careType}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs md:text-sm text-slate-500">
-                      <span className="flex items-center gap-1 whitespace-nowrap">
-                        <Clock className="w-3 h-3" />
-                        {schedule.startTime} - {schedule.endTime}
-                      </span>
-                      {client?.address && (
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 transition-colors truncate max-w-[150px] md:max-w-[200px]"
-                        >
-                          <Briefcase className="w-3 h-3 text-emerald-400" />
-                          <span className="underline underline-offset-2 truncate">{client.address}</span>
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                ) : filteredSchedules.length > 0 ? (
+                  filteredSchedules.map((schedule) => {
+                    const client = clients.find(c => c.id === schedule.clientId);
+                    const isCompleted = schedule.status === 'completed';
 
-                <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
-                  {schedule.caregiverId ? (
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 text-slate-600 text-[10px] font-bold rounded-full whitespace-nowrap">
-                      <User className="w-3 h-3" />
-                      {staff.find(s => s.id === schedule.caregiverId)?.name || '担当者'}
-                    </div>
-                  ) : (
-                    <div className="px-3 py-1 bg-amber-50 text-amber-600 text-[10px] font-bold rounded-full whitespace-nowrap">
-                      担当未定
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1 ml-auto sm:ml-0">
-                    {!isCompleted && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingSchedule(schedule);
-                          setIsAdding(true);
+                    return (
+                      <motion.div
+                        key={schedule.id}
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => !isCompleted && onSelectSchedule(schedule)}
+                        role="button"
+                        tabIndex={isCompleted ? -1 : 0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            if (!isCompleted) onSelectSchedule(schedule);
+                          }
                         }}
-                        className="p-2 text-slate-300 hover:text-emerald-500 transition-colors"
+                        className={cn(
+                          "w-full text-left bg-white rounded-3xl p-4 md:p-6 shadow-sm border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer",
+                          isCompleted ? "opacity-60 border-slate-100 cursor-default" : "border-slate-100 hover:border-emerald-200 hover:shadow-md"
+                        )}
                       >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                    )}
-                    {isCompleted ? (
-                      <div className="flex items-center gap-1 text-emerald-600 font-bold text-sm px-2 whitespace-nowrap">
-                        <CheckCircle2 className="w-5 h-5" />
-                        完了
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-emerald-600 font-bold text-sm px-2 whitespace-nowrap">
-                        記録入力
-                        <ChevronRight className="w-5 h-5" />
-                      </div>
-                    )}
+                        <div className="flex items-center gap-4 md:gap-6 min-w-0">
+                          <div className={cn(
+                            "w-12 h-12 md:w-16 md:h-16 rounded-2xl flex flex-col items-center justify-center font-bold flex-shrink-0",
+                            isCompleted ? "bg-slate-100 text-slate-400" : "bg-emerald-50 text-emerald-600"
+                          )}>
+                            <Clock className="w-4 h-4 md:w-5 md:h-5 mb-0.5 md:mb-1" />
+                            <span className="text-[10px] md:text-xs">{schedule.startTime}</span>
+                          </div>
+                          
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-base md:text-lg font-bold text-slate-900 truncate">
+                                {client?.name || '読み込み中...'} 様
+                              </h3>
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase whitespace-nowrap",
+                                schedule.careType === '身体介護' ? "bg-sky-50 text-sky-600 border border-sky-100" : 
+                                schedule.careType === '生活援助' ? "bg-amber-50 text-amber-600 border border-amber-100" : 
+                                "bg-slate-100 text-slate-600"
+                              )}>
+                                {schedule.careType}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs md:text-sm text-slate-500">
+                              <span className="flex items-center gap-1 whitespace-nowrap">
+                                <Clock className="w-3 h-3" />
+                                {schedule.startTime} - {schedule.endTime}
+                              </span>
+                              {client?.address && (
+                                <a
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 transition-colors truncate max-w-[150px] md:max-w-[200px]"
+                                >
+                                  <Briefcase className="w-3 h-3 text-emerald-400" />
+                                  <span className="underline underline-offset-2 truncate">{client.address}</span>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
+                          {schedule.caregiverId ? (
+                            <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 text-slate-600 text-[10px] font-bold rounded-full whitespace-nowrap">
+                              <User className="w-3 h-3" />
+                              {staff.find(s => s.id === schedule.caregiverId)?.name || '担当者'}
+                            </div>
+                          ) : (
+                            <div className="px-3 py-1 bg-amber-50 text-amber-600 text-[10px] font-bold rounded-full whitespace-nowrap">
+                              担当未定
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1 ml-auto sm:ml-0">
+                            {!isCompleted && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingSchedule(schedule);
+                                  setIsAdding(true);
+                                }}
+                                className="p-2 text-slate-300 hover:text-emerald-500 transition-colors"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                            )}
+                            {isCompleted ? (
+                              <div className="flex items-center gap-1 text-emerald-600 font-bold text-sm px-2 whitespace-nowrap">
+                                <CheckCircle2 className="w-5 h-5" />
+                                完了
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 text-emerald-600 font-bold text-sm px-2 whitespace-nowrap">
+                                記録入力
+                                <ChevronRight className="w-5 h-5" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-200 space-y-4">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
+                      <AlertCircle className="w-8 h-8 text-slate-300" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-slate-500 font-bold">担当する予定はありません</p>
+                      <p className="text-sm text-slate-400">ゆっくりお休みください</p>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            );
-          })
-        ) : (
-          <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-200 space-y-4">
-            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
-              <AlertCircle className="w-8 h-8 text-slate-300" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-slate-500 font-bold">本日の予定はありません</p>
-              <p className="text-sm text-slate-400">ゆっくりお休みください</p>
-            </div>
-          </div>
-        )}
-      </div>
+                )}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* Add Schedule Modal */}
       <AnimatePresence>
