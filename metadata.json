@@ -1,0 +1,6 @@
+{
+  "name": "ながらかいごhome - 訪問介護記録システム",
+  "description": "訪問介護のサービス提供記録をデジタル化し、効率的に作成・管理するためのシステムです。",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

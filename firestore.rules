@@ -1,0 +1,168 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId}
+// Fields:
+//   - name: string (required)
+//   - email: string (required, email format)
+//   - role: string (required, 'admin' or 'staff')
+//   - createdAt: string (required, date-time)
+//
+// Collection: clients
+// Document ID: {clientId}
+// Fields:
+//   - name: string (required)
+//   - age: number (optional)
+//   - gender: string (optional, 'male', 'female', 'other')
+//   - address: string (optional)
+//   - notes: string (optional)
+//   - createdAt: string (required, date-time)
+//
+// Collection: records
+// Document ID: {recordId}
+// Fields:
+//   - clientId: string (required)
+//   - caregiverId: string (required)
+//   - date: string (required, date format)
+//   - startTime: string (required)
+//   - endTime: string (required)
+//   - vitalSigns: map (optional)
+//   - mealInfo: map (optional)
+//   - excretionInfo: map (optional)
+//   - activities: list (optional)
+//   - generalNotes: string (optional)
+//   - createdAt: string (required, date-time)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "daisuke.nagashima@nagarainc.co.jp" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['name', 'email', 'role', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             isValidEmail(data.email) &&
+             data.role in ['admin', 'staff'] &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isValidClient(data) {
+      return hasRequiredFields(['name', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (!('age' in data) || data.age is number || data.age == null) &&
+             (!('gender' in data) || data.gender in ['male', 'female', 'other']) &&
+             (!('address' in data) || (data.address is string && data.address.size() < 500)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() < 2000)) &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isValidRecord(data) {
+      return hasRequiredFields(['clientId', 'caregiverId', 'date', 'startTime', 'endTime', 'createdAt']) &&
+             data.clientId is string &&
+             data.caregiverId is string &&
+             data.date is string &&
+             data.startTime is string &&
+             data.endTime is string &&
+             (!('caregiverName' in data) || data.caregiverName is string) &&
+             (!('careType' in data) || data.careType in ['身体介護', '生活援助', '身体・生活', 'その他']) &&
+             (!('vitalSigns' in data) || data.vitalSigns is map) &&
+             (!('mealInfo' in data) || data.mealInfo is map) &&
+             (!('excretionInfo' in data) || data.excretionInfo is map) &&
+             (!('activities' in data) || data.activities is list) &&
+             (!('generalNotes' in data) || (data.generalNotes is string && data.generalNotes.size() < 5000)) &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isValidSchedule(data) {
+      return hasRequiredFields(['clientId', 'caregiverId', 'date', 'startTime', 'endTime', 'careType', 'status']) &&
+             data.clientId is string &&
+             data.caregiverId is string &&
+             data.date is string &&
+             data.startTime is string &&
+             data.endTime is string &&
+             data.careType in ['身体介護', '生活援助', '身体・生活', 'その他'] &&
+             data.status in ['planned', 'scheduled', 'completed', 'cancelled'];
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidUser(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /clients/{clientId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidClient(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /records/{recordId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidRecord(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /schedules/{scheduleId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidSchedule(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /care_plans/{planId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /monitoring_reports/{reportId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /conference_replies/{replyId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

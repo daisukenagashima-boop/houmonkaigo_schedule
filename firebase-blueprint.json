@@ -1,0 +1,141 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Caregiver or staff member profile.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the caregiver." },
+        "email": { "type": "string", "format": "email", "description": "Email address." },
+        "role": { "type": "string", "enum": ["admin", "staff"], "description": "User role." },
+        "phone": { "type": "string" },
+        "assignedAreas": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp." }
+      },
+      "required": ["name", "email", "role"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Care recipient profile.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the client." },
+        "furigana": { "type": "string" },
+        "birthDate": { "type": "string", "format": "date", "description": "Date of birth." },
+        "age": { "type": "integer", "description": "Age of the client (calculated)." },
+        "gender": { "type": "string", "enum": ["male", "female", "other"], "description": "Gender." },
+        "address": { "type": "string", "description": "Home address." },
+        "notes": { "type": "string", "description": "General care notes or medical history." },
+        "recurringSchedules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "daysOfWeek": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 6 } },
+              "startTime": { "type": "string" },
+              "endTime": { "type": "string" },
+              "careType": { "type": "string", "enum": ["身体介護", "生活援助", "身体・生活", "その他"] },
+              "frequency": { "type": "string", "enum": ["weekly", "biweekly_even", "biweekly_odd"] }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." }
+      },
+      "required": ["name", "birthDate"]
+    },
+    "CareRecord": {
+      "title": "CareRecord",
+      "description": "Service provision record for a single visit.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string", "description": "Reference to the client." },
+        "caregiverId": { "type": "string", "description": "Reference to the caregiver (user)." },
+        "date": { "type": "string", "format": "date", "description": "Date of service." },
+        "startTime": { "type": "string", "description": "Start time (HH:mm)." },
+        "endTime": { "type": "string", "description": "End time (HH:mm)." },
+        "serviceType": { "type": "string", "enum": ["訪問介護", "障害福祉", "移動支援", "制度外"] },
+        "vitalSigns": {
+          "type": "object",
+          "properties": {
+            "temperature": { "type": "number" },
+            "bloodPressureHigh": { "type": "integer" },
+            "bloodPressureLow": { "type": "integer" },
+            "pulse": { "type": "integer" },
+            "spo2": { "type": "integer" },
+            "faceColor": { "type": "string", "enum": ["good", "bad"] },
+            "sweating": { "type": "string", "enum": ["none", "exists"] }
+          }
+        },
+        "mealInfo": {
+          "type": "object",
+          "properties": {
+            "mainDish": { "type": "integer" },
+            "sideDish": { "type": "integer" },
+            "fluid": { "type": "integer" },
+            "mealCare": { "type": "boolean" },
+            "fluidCare": { "type": "boolean" }
+          }
+        },
+        "excretionInfo": {
+          "type": "object",
+          "properties": {
+            "urinationCount": { "type": "integer" },
+            "urinationAmount": { "type": "string" },
+            "defecationCount": { "type": "integer" },
+            "defecationStatus": { "type": "string" },
+            "toiletCare": { "type": "boolean" },
+            "diaperChange": { "type": "boolean" },
+            "padChange": { "type": "boolean" },
+            "genitalCleaning": { "type": "boolean" },
+            "notes": { "type": "string" }
+          }
+        },
+        "physicalCare": { "type": "object" },
+        "lifeSupport": { "type": "object" },
+        "otherServices": { "type": "object" },
+        "moneyManagement": { "type": "object" },
+        "exitCheck": { "type": "object" },
+        "generalNotes": { "type": "string" },
+        "caregiverName": { "type": "string", "description": "Name of the caregiver who created the record." },
+        "signature": { "type": "string" },
+        "oralConsent": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientId", "caregiverId", "date", "startTime", "endTime", "serviceType"]
+    },
+    "Schedule": {
+      "title": "Schedule",
+      "description": "Planned visit for a caregiver.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string", "description": "Reference to the client." },
+        "caregiverId": { "type": "string", "description": "Reference to the caregiver (user)." },
+        "date": { "type": "string", "format": "date", "description": "Date of scheduled service." },
+        "startTime": { "type": "string", "description": "Start time (HH:mm)." },
+        "endTime": { "type": "string", "description": "End time (HH:mm)." },
+        "careType": { "type": "string", "enum": ["身体介護", "生活援助", "身体・生活", "その他"], "description": "Type of care." },
+        "status": { "type": "string", "enum": ["planned", "completed", "cancelled", "scheduled"], "description": "Schedule status." }
+      },
+      "required": ["clientId", "caregiverId", "date", "startTime", "endTime", "careType"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Caregiver profiles."
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Care recipient profiles."
+    },
+    "/records/{recordId}": {
+      "schema": "CareRecord",
+      "description": "Service provision records."
+    },
+    "/schedules/{scheduleId}": {
+      "schema": "Schedule",
+      "description": "Planned visit schedules."
+    }
+  }
+}
