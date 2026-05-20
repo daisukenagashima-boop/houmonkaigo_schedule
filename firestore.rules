@@ -46,15 +46,17 @@ service cloud.firestore {
     // ===============================================================
 
     function isAuthenticated() {
-      return true;
+      return request.auth != null;
     }
 
     function isOwner(userId) {
-      return true;
+      return request.auth != null && request.auth.uid == userId;
     }
 
     function isAdmin() {
-      return true;
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     function isValidEmail(email) {
@@ -125,42 +127,60 @@ service cloud.firestore {
 
     // ===============================================================
     // Collection Rules
+    //
+    // NOTE: 事業所間のデータ分離（マルチテナント）は未実装です。
+    //   現状は「認証済みであれば全データ閲覧可能」の状態です。
+    //   本番運用前に clients/records/schedules 等に tenantId
+    //   フィールドを追加し、各ルールに
+    //     resource.data.tenantId == request.auth.token.tenantId
+    //   などのテナント分離条件を追加してください。
+    //
+    // NOTE: role を Firestore ドキュメントで管理しているため、
+    //   厳密にはユーザーが自分のroleを書き換える余地があります。
+    //   将来的には Firebase Auth Custom Claims への移行を推奨。
     // ===============================================================
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated() && isValidUser(request.resource.data);
-      allow delete: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data);
+      // 自分自身 or 管理者のみ更新可。role 変更は管理者のみ。
+      allow update: if (isOwner(userId) || isAdmin())
+                    && isValidUser(request.resource.data)
+                    && (resource.data.role == request.resource.data.role || isAdmin());
+      allow delete: if isAdmin();
     }
 
     match /clients/{clientId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated() && isValidClient(request.resource.data);
-      allow delete: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     match /records/{recordId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated() && isValidRecord(request.resource.data);
-      allow delete: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     match /schedules/{scheduleId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated() && isValidSchedule(request.resource.data);
-      allow delete: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     match /care_plans/{planId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
 
     match /monitoring_reports/{reportId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
 
     match /conference_replies/{replyId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
   }
 }
