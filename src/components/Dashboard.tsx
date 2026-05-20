@@ -145,17 +145,20 @@ export default function Dashboard({
     };
   }, [user, todayStr]);
 
-  // Auto-seed baseline data if Firestore is completely empty on load
+  // Auto-seed baseline data if Firestore is completely empty on load.
+  // DEV ONLY: 本番ビルド（vite build で import.meta.env.DEV === false）では実行されません。
+  // これにより本番ユーザーの初回ログイン時にデモデータが投入される事故を防ぎます。
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     if (!loading && user && clients.length === 0 && !isSeeding) {
       const autoSeedDB = async () => {
         setIsSeeding(true);
         try {
-          console.log("Database is empty. Automatically generating high-fidelity demo dataset...");
+          console.log("[DEV] Database is empty. Automatically generating high-fidelity demo dataset...");
           await seedCompleteDemoDatabase(user.uid, user.email);
-          console.log("Auto-seeding completed successfully!");
+          console.log("[DEV] Auto-seeding completed successfully!");
         } catch (e: any) {
-          console.error("Auto-seeding error:", e);
+          console.error("[DEV] Auto-seeding error:", e);
         } finally {
           setIsSeeding(false);
         }
