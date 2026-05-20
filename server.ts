@@ -41,7 +41,7 @@ async function startServer() {
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.0-flash",
         contents: prompt,
       });
 
@@ -92,7 +92,7 @@ async function startServer() {
       contents.push(userMessage);
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.0-flash",
         contents: contents,
         config: {
           systemInstruction: systemPrompt,
@@ -154,7 +154,7 @@ ${records ? JSON.stringify(records) : "日々の訪問記録はありません�
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.0-flash",
         contents: userMessage,
         config: {
           systemInstruction: systemPrompt,
@@ -198,7 +198,7 @@ ${caregiverNotes}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.0-flash",
         contents: userPrompt,
         config: {
           systemInstruction: systemPrompt,
@@ -260,7 +260,7 @@ ${caregiverNotes}
 という具体的な reassign アクションを提案に含めてJSON化してください。非常時やスポット枠の救済を重視する発言をしてください。`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.0-flash",
         contents: JSON.stringify(messages),
         config: {
           systemInstruction: systemPrompt,

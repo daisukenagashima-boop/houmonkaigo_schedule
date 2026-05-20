@@ -7,7 +7,8 @@ import {
   limit, 
   where,
   doc,
-  updateDoc
+  updateDoc,
+  addDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './AuthGuard';
@@ -297,7 +298,7 @@ export default function Dashboard({
             const cid = parts[1];
             const matchingSched = todaySchedules.find(s => s.id === action.scheduleId);
             if (matchingSched) {
-              await updateDoc(doc(db, 'schedules'), {
+              await addDoc(collection(db, 'schedules'), {
                 clientId: matchingSched.clientId,
                 caregiverId: action.caregiverId,
                 date: todayStr,
