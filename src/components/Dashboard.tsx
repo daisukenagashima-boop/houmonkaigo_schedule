@@ -210,6 +210,7 @@ export default function Dashboard({
     
     let physicalCount = 0;
     let lifeCount = 0;
+    let mixedCount = 0;
     let otherCount = 0;
     
     monthSchedules.forEach(s => {
@@ -217,6 +218,8 @@ export default function Dashboard({
         physicalCount++;
       } else if (s.careType === '生活援助') {
         lifeCount++;
+      } else if (s.careType === '身体・生活') {
+        mixedCount++;
       } else {
         otherCount++;
       }
@@ -226,6 +229,7 @@ export default function Dashboard({
       total: monthSchedules.length,
       physical: physicalCount,
       life: lifeCount,
+      mixed: mixedCount,
       other: otherCount,
       monthLabel: format(new Date(), 'M月')
     };
@@ -391,7 +395,7 @@ export default function Dashboard({
           colorClass={{
             bg: "bg-emerald-50/70 hover:bg-emerald-100/80",
             border: "border-emerald-100/80 hover:border-emerald-200",
-            iconBg: "bg-emerald-105 text-emerald-700",
+            iconBg: "bg-emerald-100 text-emerald-700",
             labelText: "text-emerald-800/90",
             valueText: "text-emerald-950 font-black",
             subtextColor: "text-emerald-600/80"
@@ -406,7 +410,7 @@ export default function Dashboard({
           colorClass={{
             bg: "bg-amber-50/70 hover:bg-amber-100/80",
             border: "border-amber-100/80 hover:border-amber-200",
-            iconBg: "bg-amber-105 text-amber-700",
+            iconBg: "bg-amber-100 text-amber-700",
             labelText: "text-amber-800/90",
             valueText: "text-amber-950 font-black",
             subtextColor: todaySchedules.filter(s => !s.caregiverId).length > 0 ? "text-rose-600 font-extrabold" : "text-amber-600/80"
@@ -421,7 +425,7 @@ export default function Dashboard({
           colorClass={{
             bg: "bg-sky-50/70 hover:bg-sky-100/80",
             border: "border-sky-100/80 hover:border-sky-200",
-            iconBg: "bg-sky-105 text-sky-700",
+            iconBg: "bg-sky-100 text-sky-700",
             labelText: "text-sky-800/90",
             valueText: "text-sky-950 font-black",
             subtextColor: "text-sky-600/80"
@@ -437,7 +441,7 @@ export default function Dashboard({
             colorClass={{
               bg: "bg-purple-50/70 hover:bg-purple-100/80",
               border: "border-purple-100/80 hover:border-purple-200",
-              iconBg: "bg-purple-105 text-purple-700",
+              iconBg: "bg-purple-100 text-purple-700",
               labelText: "text-purple-800/90",
               valueText: "text-purple-950 font-black",
               subtextColor: "text-purple-600/80"
@@ -453,7 +457,7 @@ export default function Dashboard({
             colorClass={{
               bg: "bg-purple-50/70 hover:bg-purple-100/80",
               border: "border-purple-100/80 hover:border-purple-200",
-              iconBg: "bg-purple-105 text-purple-700",
+              iconBg: "bg-purple-100 text-purple-700",
               labelText: "text-purple-800/90",
               valueText: "text-purple-950 font-black",
               subtextColor: "text-purple-600/80"
@@ -469,7 +473,7 @@ export default function Dashboard({
           colorClass={{
             bg: "bg-rose-50/70 hover:bg-rose-100/80",
             border: "border-rose-100/80 hover:border-rose-200",
-            iconBg: "bg-rose-105 text-rose-700",
+            iconBg: "bg-rose-100 text-rose-700",
             labelText: "text-rose-800/90",
             valueText: "text-rose-950 font-black",
             subtextColor: "text-rose-600/80"
@@ -479,21 +483,29 @@ export default function Dashboard({
           icon={<FileText className="w-6 h-6 text-teal-600" />} 
           label={`${monthlyStats.monthLabel}のサービス内訳`} 
           value={
-            <div className="flex flex-row items-center gap-4 text-sm font-extrabold leading-none pt-1">
-              <span className="flex items-center gap-1 bg-sky-100 text-sky-800 px-2 py-1 rounded-lg">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-extrabold leading-none pt-1">
+              <span className="flex items-center gap-1 bg-sky-100 text-sky-800 px-2 py-1.5 rounded-lg">
                 身体: {monthlyStats.physical}件
               </span>
-              <span className="flex items-center gap-1 bg-amber-100 text-amber-800 px-2 py-1 rounded-lg">
+              <span className="flex items-center gap-1 bg-amber-100 text-amber-800 px-2 py-1.5 rounded-lg">
                 生活: {monthlyStats.life}件
               </span>
+              <span className="flex items-center gap-1 bg-emerald-100 text-emerald-800 px-2 py-1.5 rounded-lg">
+                身体生活: {monthlyStats.mixed}件
+              </span>
+              {monthlyStats.other > 0 && (
+                <span className="flex items-center gap-1 bg-slate-100 text-slate-800 px-2 py-1.5 rounded-lg">
+                  他: {monthlyStats.other}件
+                </span>
+              )}
             </div>
           } 
-          subtext="身体介護と生活援助の実施比率"
+          subtext="身体・生活を含む各種サービスごとの内訳件数"
           onClick={onViewSchedule}
           colorClass={{
             bg: "bg-teal-50/70 hover:bg-teal-100/80",
             border: "border-teal-100/80 hover:border-teal-200",
-            iconBg: "bg-teal-105 text-teal-700",
+            iconBg: "bg-teal-100 text-teal-700",
             labelText: "text-teal-800/90",
             valueText: "text-teal-950",
             subtextColor: "text-teal-600/80"

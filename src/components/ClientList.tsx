@@ -432,7 +432,7 @@ export default function ClientList() {
               </div>
 
               {/* Right Column: Actions */}
-              <div className="flex sm:flex-row md:flex-col items-center justify-end gap-1.5 shrink-0 bg-slate-55/10 md:bg-transparent -mx-4 -mb-4 p-2.5 md:p-0 md:m-0 rounded-b-2xl md:rounded-none border-t border-slate-100 md:border-t-0">
+              <div className="flex flex-row md:flex-col items-center justify-end w-full md:w-auto gap-2 shrink-0 bg-slate-100/60 md:bg-transparent -mx-4 -mb-4 p-3 md:p-0 md:m-0 rounded-b-2xl md:rounded-none border-t border-slate-100 md:border-t-0">
                 <button
                   onClick={() => {
                     setEditingClient(client);

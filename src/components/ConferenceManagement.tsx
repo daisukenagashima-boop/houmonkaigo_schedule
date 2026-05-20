@@ -158,7 +158,7 @@ ${caregiverNotes}
                 setGeneratedReply('');
                 setMeetingSummary('');
               }}
-              className="w-full px-4 py-3 bg-slate-55 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
             >
               <option value="">利用者を選択してください</option>
               {clients.map(c => (

@@ -98,14 +98,26 @@ function MainLayout() {
   };
 
   return (
-    <div className="min-h-screen flex bg-slate-50 lg:pl-72">
-      {/* Mobile Menu Button */}
-      <button
-        onClick={() => setIsSidebarOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-40 p-2 bg-white rounded-xl shadow-lg border border-slate-100"
-      >
-        <Menu className="w-6 h-6 text-slate-600" />
-      </button>
+    <div className="min-h-screen flex flex-col lg:flex-row bg-slate-50 lg:pl-72">
+      {/* Mobile Header Bar */}
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-b border-slate-100/80 px-4 flex items-center justify-between z-40 shadow-[0_1px_10px_rgba(15,23,42,0.03)] no-print">
+        <button
+          onClick={() => setIsSidebarOpen(true)}
+          className="p-2 hover:bg-slate-100/50 rounded-xl transition-colors"
+          aria-label="メニューを開く"
+        >
+          <Menu className="w-6 h-6 text-slate-600" />
+        </button>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 bg-gradient-to-tr from-emerald-600 to-teal-600 rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-emerald-650/10">
+            <span className="text-[14px]">な</span>
+          </div>
+          <span className="text-base font-extrabold text-slate-800 tracking-tight">ながらかいご</span>
+        </div>
+        <div className="w-8 h-8 bg-emerald-600 text-white rounded-full flex items-center justify-center font-bold text-xs shadow-sm shadow-emerald-600/10">
+          {profile?.name?.[0] || '?'}
+        </div>
+      </header>
 
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>

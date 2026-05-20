@@ -205,26 +205,55 @@ export async function seedCompleteDemoDatabase(loggedInUserId?: string, loggedIn
 
       const recScheds = [];
       if (i % 3 === 0) {
+        const timeOptions = [
+          { start: "08:30", end: "09:30" },
+          { start: "10:00", end: "11:00" },
+          { start: "11:15", end: "12:15" },
+          { start: "13:00", end: "14:00" },
+          { start: "14:30", end: "15:30" },
+          { start: "15:45", end: "16:45" },
+          { start: "17:00", end: "18:00" }
+        ];
+        const selectedTime = timeOptions[Math.floor(i / 3) % timeOptions.length];
         recScheds.push({
           daysOfWeek: [1, 4], 
-          startTime: "10:00",
-          endTime: "11:00",
+          startTime: selectedTime.start,
+          endTime: selectedTime.end,
           careType: "身体介護" as const,
           frequency: "weekly" as const
         });
       } else if (i % 3 === 1) {
+        const timeOptions = [
+          { start: "09:00", end: "10:00" },
+          { start: "10:15", end: "11:15" },
+          { start: "11:30", end: "12:30" },
+          { start: "13:30", end: "14:30" },
+          { start: "14:45", end: "15:45" },
+          { start: "16:00", end: "17:00" },
+          { start: "17:15", end: "18:15" }
+        ];
+        const selectedTime = timeOptions[Math.floor(i / 3) % timeOptions.length];
         recScheds.push({
           daysOfWeek: [2, 5], 
-          startTime: "13:30",
-          endTime: "14:30",
+          startTime: selectedTime.start,
+          endTime: selectedTime.end,
           careType: "生活援助" as const,
           frequency: "weekly" as const
         });
       } else {
+        const timeOptions = [
+          { start: "08:00", end: "09:30" },
+          { start: "09:45", end: "11:15" },
+          { start: "11:30", end: "13:00" },
+          { start: "13:30", end: "15:00" },
+          { start: "15:15", end: "16:45" },
+          { start: "17:00", end: "18:30" }
+        ];
+        const selectedTime = timeOptions[Math.floor(i / 3) % timeOptions.length];
         recScheds.push({
           daysOfWeek: [3], 
-          startTime: "09:00",
-          endTime: "10:30",
+          startTime: selectedTime.start,
+          endTime: selectedTime.end,
           careType: "身体・生活" as const,
           frequency: "weekly" as const
         });
