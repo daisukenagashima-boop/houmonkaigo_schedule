@@ -16,6 +16,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  loginAsBypassUser: (email: string, name: string, role: 'admin' | 'staff', password?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,7 +27,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // 1. Check for active local bypass session first
+    const savedUser = localStorage.getItem('bypass_user');
+    const savedProfile = localStorage.getItem('bypass_profile');
+
+    if (savedUser && savedProfile) {
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        const parsedProfile = JSON.parse(savedProfile);
+        setUser({
+          uid: parsedUser.uid,
+          email: parsedUser.email,
+          emailVerified: true,
+          isAnonymous: false,
+        } as unknown as User);
+        setProfile(parsedProfile);
+        setLoading(false);
+        return; // Skip normal firebase onAuthStateChanged listener to persist bypass mode
+      } catch (e) {
+        localStorage.removeItem('bypass_user');
+        localStorage.removeItem('bypass_profile');
+      }
+    }
+
+    // 2. Normal Firebase auth listener
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (localStorage.getItem('bypass_user')) {
+        return;
+      }
       setUser(firebaseUser);
       if (firebaseUser) {
         try {
@@ -57,6 +85,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleSignOut = async () => {
+    localStorage.removeItem('bypass_user');
+    localStorage.removeItem('bypass_profile');
+    setUser(null);
+    setProfile(null);
     try {
       await auth.signOut();
     } catch (error) {
@@ -64,8 +96,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginAsBypassUser = async (email: string, name: string, role: 'admin' | 'staff', password?: string) => {
+    setLoading(true);
+    try {
+      const uid = "bypass_" + email.toLowerCase().replace(/[^a-zA-Z0-9]/g, "_");
+      
+      const mockUser = {
+        uid,
+        email,
+        emailVerified: true,
+        isAnonymous: false,
+      } as unknown as User;
+
+      const mockProfile: UserProfile = {
+        id: uid,
+        name,
+        email,
+        role,
+        createdAt: new Date().toISOString(),
+        phone: "090-1234-5678",
+        assignedAreas: ["長柄町", "茂原市"],
+        status: "active",
+      };
+
+      // Set profile in Firestore so queries function correctly
+      try {
+        await setDoc(doc(db, 'users', uid), {
+          ...mockProfile,
+          ...(password ? { password } : {})
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Could not sync bypass profile to Firestore, continuing in-memory:', err);
+      }
+
+      localStorage.setItem('bypass_user', JSON.stringify({ uid, email }));
+      localStorage.setItem('bypass_profile', JSON.stringify(mockProfile));
+
+      setUser(mockUser);
+      setProfile(mockProfile);
+    } catch (error) {
+      console.error('Bypass login failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signOut: handleSignOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, signOut: handleSignOut, loginAsBypassUser }}>
       {children}
     </AuthContext.Provider>
   );
@@ -80,7 +157,7 @@ export function useAuth() {
 }
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, loginAsBypassUser } = useAuth();
   
   // Tab states: 'login' | 'signup'
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
@@ -115,29 +192,27 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     setIsSubmitting(true);
 
     try {
+      const cleanEmail = email.trim().toLowerCase();
+      const uid = "bypass_" + cleanEmail.replace(/[^a-zA-Z0-9]/g, "_");
+
       if (activeTab === 'login') {
-        try {
-          await signInWithEmailAndPassword(auth, email, password);
-        } catch (err: any) {
-          // If login fails because user does not exist, automatically trigger signup for maximum developer convenience
-          if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-            try {
-              // Creating the user dynamically first
-              const creds = await createUserWithEmailAndPassword(auth, email, password);
-              const defaultName = email.split('@')[0];
-              const newProfile = {
-                name: defaultName,
-                email: email,
-                role: email === 'daisuke.nagashima@nagarainc.co.jp' ? 'admin' : 'staff',
-                createdAt: new Date().toISOString()
-              };
-              await setDoc(doc(db, 'users', creds.user.uid), newProfile);
-            } catch (signUpErr: any) {
-              throw err; // throw original login error if fallback registration fails
-            }
-          } else {
-            throw err;
+        const userDoc = await getDoc(doc(db, 'users', uid));
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          // If a password was saved and it doesn't match, verify it
+          if (userData.password && userData.password !== password) {
+            setAuthError('パスワードが正しくありません。');
+            setIsSubmitting(false);
+            return;
           }
+          
+          await loginAsBypassUser(cleanEmail, userData.name || cleanEmail.split('@')[0], userData.role || 'staff', password);
+        } else {
+          // If user does not exist, automatically sign them up for the best experience!
+          const defaultName = cleanEmail.split('@')[0];
+          const newRole = cleanEmail === 'daisuke.nagashima@nagarainc.co.jp' ? 'admin' : 'staff';
+          await loginAsBypassUser(cleanEmail, defaultName, newRole, password);
         }
       } else {
         // Sign-up process
@@ -146,28 +221,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           setIsSubmitting(false);
           return;
         }
-        const credential = await createUserWithEmailAndPassword(auth, email, password);
-        const newProfile = {
-          name,
-          email,
-          role: email === 'daisuke.nagashima@nagarainc.co.jp' ? 'admin' : 'staff',
-          createdAt: new Date().toISOString()
-        };
-        await setDoc(doc(db, 'users', credential.user.uid), newProfile);
+        const newRole = cleanEmail === 'daisuke.nagashima@nagarainc.co.jp' ? 'admin' : 'staff';
+        await loginAsBypassUser(cleanEmail, name, newRole, password);
       }
     } catch (error: any) {
       console.error("Auth error:", error);
-      let errMsg = "認証エラーが発生しました。入力内容をお確かめください。";
-      if (error.code === 'auth/invalid-email') {
-        errMsg = "有効なメールアドレス形式を入力してください。";
-      } else if (error.code === 'auth/weak-password') {
-        errMsg = "パスワードは6文字以上で設定してください。";
-      } else if (error.code === 'auth/email-already-in-use') {
-        errMsg = "このメールアドレスは既に登録されています。";
-      } else if (error.code === 'auth/wrong-password') {
-        errMsg = "パスワードが正しくありません。";
-      }
-      setAuthError(errMsg);
+      setAuthError(error.message || "認証エラーが発生しました。");
     } finally {
       setIsSubmitting(false);
     }
@@ -177,30 +236,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const handleQuickDemoAccess = async () => {
     setIsSubmitting(true);
     setAuthError(null);
-    const demoEmail = "daisuke.nagashima@nagarainc.co.jp";
-    const demoPassword = "password123";
-
     try {
-      try {
-        await signInWithEmailAndPassword(auth, demoEmail, demoPassword);
-      } catch (loginErr: any) {
-        // Auto-create Admin profile on the fly if it doesn't exist yet!
-        if (loginErr.code === 'auth/user-not-found' || loginErr.code === 'auth/invalid-credential') {
-          const cred = await createUserWithEmailAndPassword(auth, demoEmail, demoPassword);
-          const demoProfile = {
-            name: "長島 大介",
-            email: demoEmail,
-            role: "admin",
-            phone: "090-1234-5678",
-            assignedAreas: ["長柄町", "茂原市"],
-            status: "active",
-            createdAt: new Date().toISOString()
-          };
-          await setDoc(doc(db, 'users', cred.user.uid), demoProfile);
-        } else {
-          throw loginErr;
-        }
-      }
+      await loginAsBypassUser("daisuke.nagashima@nagarainc.co.jp", "長島 大介", "admin", "password123");
     } catch (err: any) {
       console.error("Quick access error:", err);
       setAuthError("クイックアクセスに失敗しました: " + err.message);
