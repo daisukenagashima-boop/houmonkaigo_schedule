@@ -558,7 +558,7 @@ export default function CarePlansAndMonitoring() {
               </div>
 
               {/* Japanese Formal monitoring sheet form wrapper */}
-              <div id="print-monitoring-sheet" className="bg-white border-2 border-slate-800 p-8 shadow-md rounded-xl max-w-4xl mx-auto space-y-6 text-slate-900 font-sans leading-relaxed">
+              <div id="print-monitoring-sheet" className="print-area bg-white border-2 border-slate-800 p-8 shadow-md rounded-xl max-w-4xl mx-auto space-y-6 text-slate-900 font-sans leading-relaxed">
                 <h2 className="text-center text-2xl font-bold tracking-widest border-b-2 border-slate-800 pb-2 mb-6">
                   モニタリングシート
                 </h2>

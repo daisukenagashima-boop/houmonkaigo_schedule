@@ -457,7 +457,7 @@ export default function RecordForm({ onClose, onSuccess, initialData }: RecordFo
         </div>
 
         {/* Print View Section - only visible when printing */}
-        <div className="print-only fixed inset-0 bg-white p-8 text-slate-900 font-sans z-[70] overflow-visible">
+        <div className="print-only print-area fixed inset-0 bg-white p-8 text-slate-900 font-sans z-[70] overflow-visible">
           <div className="border-2 border-slate-900 p-6 space-y-8">
             <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
               <div>

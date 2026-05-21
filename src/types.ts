@@ -6,6 +6,74 @@ export interface RecurringSchedule {
   frequency: 'weekly' | 'biweekly_even' | 'biweekly_odd';
 }
 
+export interface AssessmentInfo {
+  // ADL（日常生活動作）: 自立 / 一部介助 / 全介助
+  adl?: {
+    eating?: '自立' | '一部介助' | '全介助' | string;
+    bathing?: '自立' | '一部介助' | '全介助' | string;
+    toileting?: '自立' | '一部介助' | '全介助' | string;
+    dressing?: '自立' | '一部介助' | '全介助' | string;
+    ambulation?: '自立' | '杖' | '歩行器' | '車椅子' | '寝たきり' | string;
+  };
+  // IADL（手段的日常生活動作）
+  iadl?: {
+    cooking?: '自立' | '一部介助' | '全介助' | string;
+    shopping?: '自立' | '一部介助' | '全介助' | string;
+    cleaning?: '自立' | '一部介助' | '全介助' | string;
+    medication?: '自立' | '一部介助' | '全介助' | string;
+    phone?: '自立' | '一部介助' | '全介助' | string;
+  };
+  // 認知機能
+  cognition?: {
+    hdsR?: number; // 改訂長谷川式簡易知能評価スケール（0-30）
+    mmse?: number; // MMSE（0-30）
+    notes?: string;
+  };
+  // 医療・健康
+  health?: {
+    diseases?: string[]; // 既往歴
+    medications?: string[]; // 服薬中の薬剤
+    allergies?: string[];
+    medicalNotes?: string;
+  };
+  // 社会的状況
+  social?: {
+    livingWith?: string; // 同居家族
+    familySupport?: string;
+    communityInvolvement?: string;
+  };
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export type AttachmentCategory =
+  | 'basic'        // 基本情報: 保険証、本人確認、家族構成
+  | 'assessment'   // アセスメントシート原本
+  | 'care-plan'    // 訪問介護計画書
+  | 'cm-plan'      // ケアマネプラン・主治医意見書
+  | 'record'       // 訪問記録に紐づく写真・補助資料
+  | 'other';       // その他
+
+export interface AttachedFile {
+  name: string;
+  type: 'pdf' | 'image' | 'doc' | 'other';
+  category?: AttachmentCategory;
+  uploadedAt: string;
+  size?: string;
+  uploaderName?: string;
+  url?: string; // モック実装ではダミーURL（'#'）
+}
+
+export interface CareMgrInfo {
+  careManagerName?: string;
+  careManagerOfficeName?: string;
+  careManagerPhone?: string;
+  carePlanSummary?: string; // ケアプラン要旨
+  carePlanGoals?: string[]; // 長期目標 / 短期目標
+  carePlanFileUrl?: string; // 添付ファイルURL（モック）
+  updatedAt?: string;
+}
+
 export interface Client {
   id: string;
   name: string;
@@ -14,8 +82,14 @@ export interface Client {
   age?: number;
   gender?: 'male' | 'female' | 'other';
   address?: string;
+  phone?: string;
   notes?: string;
   recurringSchedules?: RecurringSchedule[];
+  // 利用者詳細情報（オプショナル拡張）
+  assessment?: AssessmentInfo;
+  careMgrInfo?: CareMgrInfo;
+  generalMemo?: string;
+  attachments?: AttachedFile[];
   createdAt: string;
 }
 

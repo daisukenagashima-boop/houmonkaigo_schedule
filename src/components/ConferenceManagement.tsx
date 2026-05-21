@@ -278,7 +278,7 @@ ${caregiverNotes}
                 </div>
 
                 {/* Printable Business Letter Form */}
-                <div id="conference-reply-printable" className="bg-white border border-slate-200 p-8 rounded-2xl shadow-sm text-slate-800 font-sans text-sm space-y-6 whitespace-pre-line leading-relaxed">
+                <div id="conference-reply-printable" className="print-area bg-white border border-slate-200 p-8 rounded-2xl shadow-sm text-slate-800 font-sans text-sm space-y-6 whitespace-pre-line leading-relaxed">
                   {/* Formal Japanese Business Header */}
                   <div className="flex justify-between items-start text-xs text-slate-500">
                     <span>各関係介護サービス事業所 各位</span>

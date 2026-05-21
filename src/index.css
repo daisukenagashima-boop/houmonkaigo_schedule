@@ -9,3 +9,91 @@ body {
   @apply bg-slate-50 text-slate-900 font-sans;
 }
 
+/* ===============================================================
+   印刷スタイル
+   - 書面本文(.print-area)だけ印刷されるよう、それ以外を visibility:hidden
+   - サイドバー・ヘッダー・装飾を全カット
+   - 印刷したい要素には className="... print-area" を付与すること
+   =============================================================== */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* ページ全体を一旦不可視に */
+  body * {
+    visibility: hidden;
+  }
+
+  /* 書面本文と、その子孫だけを表示 */
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
+  }
+
+  /* 書面本文を左上に固定して全幅化 */
+  .print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 12mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  /* === ページ分割で枠が分裂する問題への対処 === */
+  /* 書面の直下の子要素（=主要セクション）は、できる限り1ページに収める */
+  .print-area > * {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* テーブルは行単位で分割可。行は分割しない */
+  .print-area table {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  .print-area tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-area thead {
+    display: table-header-group;
+  }
+
+  /* 見出しの直後は改ページしない */
+  .print-area h1,
+  .print-area h2,
+  .print-area h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* 印刷対象がないページでも、no-print は確実に消す */
+  .no-print {
+    display: none !important;
+  }
+
+  /* グラデーション・影を消して印刷を綺麗に */
+  .bg-gradient-to-br,
+  .bg-gradient-to-tr,
+  .bg-gradient-to-r,
+  .bg-gradient-to-l {
+    background: transparent !important;
+    color: black !important;
+  }
+  [class*="shadow-"] {
+    box-shadow: none !important;
+  }
+
+  /* ページ余白 */
+  @page {
+    margin: 12mm;
+  }
+}

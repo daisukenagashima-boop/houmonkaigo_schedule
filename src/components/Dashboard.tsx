@@ -14,7 +14,7 @@ import { db } from '../firebase';
 import { useAuth } from './AuthGuard';
 import { Client, CareRecord, Schedule } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firestore';
-import { seedCompleteDemoDatabase } from '../lib/seedData';
+import { seedCompleteDemoDatabase, wipeAllDemoData } from '../lib/seedData';
 import { 
   Users, 
   FileText, 
@@ -69,13 +69,14 @@ export default function Dashboard({
 
   // AI Chat Assistant State
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    { sender: 'assistant', text: 'こんにちは！「ながら介護AIアシスタント」へようこそ。現在のご状況、または明日の訪問予定のシミュレーション、キャンセル発生時におけるヘルパー救済調整など、私にお任せください！' }
+    { sender: 'assistant', text: 'こんにちは！「ながらAI」です。本日のご状況、明日の訪問予定のシミュレーション、急なキャンセル発生時のヘルパー再割り当てなど、お気軽にご相談ください。' }
   ]);
   const [inputText, setInputText] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [proposedActions, setProposedActions] = useState<any[]>([]);
   const [appliedActions, setAppliedActions] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const now = new Date();
   const todayStr = format(now, 'yyyy-MM-dd');
@@ -145,27 +146,49 @@ export default function Dashboard({
     };
   }, [user, todayStr]);
 
-  // Auto-seed baseline data if Firestore is completely empty on load.
-  // DEV ONLY: 本番ビルド（vite build で import.meta.env.DEV === false）では実行されません。
-  // これにより本番ユーザーの初回ログイン時にデモデータが投入される事故を防ぎます。
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    if (!loading && user && clients.length === 0 && !isSeeding) {
-      const autoSeedDB = async () => {
-        setIsSeeding(true);
-        try {
-          console.log("[DEV] Database is empty. Automatically generating high-fidelity demo dataset...");
-          await seedCompleteDemoDatabase(user.uid, user.email);
-          console.log("[DEV] Auto-seeding completed successfully!");
-        } catch (e: any) {
-          console.error("[DEV] Auto-seeding error:", e);
-        } finally {
-          setIsSeeding(false);
-        }
-      };
-      autoSeedDB();
+  // 自動シードは廃止しました。重複投入の事故を防ぐため、シードは管理者の手動ボタン
+  // (handleResetAndReseed) からのみ実行可能とします。
+  // 旧コードは git history に残っています。
+
+  // 管理者用: デモデータの完全リセット&再投入
+  const handleResetAndReseed = async () => {
+    if (!user) return;
+    const confirmed = window.confirm(
+      'デモデータを全てリセットして「訪問介護ステーションながら（岐阜市、利用者60名）」の最新データを投入します。\n\n既存のデータ（利用者・スタッフ・スケジュール・記録・ケアプラン）はすべて削除されます。よろしいですか？'
+    );
+    if (!confirmed) return;
+    setIsResetting(true);
+    try {
+      await seedCompleteDemoDatabase(user.uid, user.email);
+      alert('✅ デモデータを再投入しました！「訪問介護ステーションながら」のデータが反映されています。');
+    } catch (e: any) {
+      console.error('Reset & reseed failed:', e);
+      alert(`❌ 再投入に失敗しました: ${e.message || e}`);
+    } finally {
+      setIsResetting(false);
     }
-  }, [loading, clients.length, user]);
+  };
+
+  // 管理者用: 全データ完全削除（投入はしない）
+  const handleWipeOnly = async () => {
+    if (!user) return;
+    const confirmed = window.confirm(
+      '⚠️ 警告: Firestoreの全データを完全に削除します。\n\n利用者・スタッフ・スケジュール・記録・ケアプラン・モニタリング報告書・照会回答書がすべて削除されます。\n\n本当によろしいですか？'
+    );
+    if (!confirmed) return;
+    const doubleConfirm = window.confirm('もう一度確認します。本当に全データを削除しますか？');
+    if (!doubleConfirm) return;
+    setIsResetting(true);
+    try {
+      await wipeAllDemoData(user.uid);
+      alert('🗑 全データを削除しました。「デモデータ再投入」ボタンで新しいデータを投入してください。');
+    } catch (e: any) {
+      console.error('Wipe failed:', e);
+      alert(`❌ 削除に失敗しました: ${e.message || e}`);
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   // Derive today's full schedule
   const todaySchedules = React.useMemo(() => {
@@ -267,7 +290,7 @@ export default function Dashboard({
       
       const responseText = data.text;
       
-      // Attempt to extract proposed schedule actions in JSON blocks
+      // AI応答内の ```json ... ``` ブロックから1クリック適用アクションを抽出
       const jsonRegex = /```json\s*([\s\S]+?)\s*```/;
       const match = responseText.match(jsonRegex);
       if (match) {
@@ -281,7 +304,9 @@ export default function Dashboard({
         }
       }
 
-      setChatMessages(prev => [...prev, { sender: 'assistant', text: responseText }]);
+      // チャットには JSON ブロックを除去した「人が読む部分」だけ表示
+      const displayText = responseText.replace(jsonRegex, '').replace(/\n{3,}/g, '\n\n').trim();
+      setChatMessages(prev => [...prev, { sender: 'assistant', text: displayText }]);
     } catch (err: any) {
       setChatMessages(prev => [...prev, { sender: 'assistant', text: '申し訳ございません。接続に失敗したため、時間をおいて再度お試しください。' }]);
     } finally {
@@ -337,15 +362,12 @@ export default function Dashboard({
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-amber-200/10 rounded-full blur-2xl -ml-20 -mb-20 pointer-events-none"></div>
 
         <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-6 z-10">
-          <div className="space-y-3">
-            <span className="inline-block bg-white/20 border border-white/30 font-extrabold text-[11px] sm:text-xs px-3.5 py-1.5 rounded-full text-amber-50 backdrop-blur-md tracking-wider">
-              🌸 いつも笑顔を届ける | AIアシスタント搭載 訪問介護支援システム
-            </span>
+          <div className="space-y-2">
             <h1 className="text-3xl md:text-4xl font-black tracking-tight leading-tight">
               こんにちは、{profile?.name || 'ヘルパー'} さん
             </h1>
-            <p className="text-emerald-50 text-xs sm:text-sm max-w-xl font-bold leading-relaxed">
-              📅 {format(new Date(), 'yyyy年MM月dd日 (E)', { locale: ja })} | 本日もあたたかなケア、お疲れ様です！事業所の動きがひと目で確認できます。
+            <p className="text-emerald-50/90 text-xs sm:text-sm font-bold">
+              {format(new Date(), 'yyyy年MM月dd日 (E)', { locale: ja })}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -356,45 +378,39 @@ export default function Dashboard({
               <PlusCircle className="w-5 h-5 text-emerald-600" />
               実績記録を記入
             </button>
-            {onViewMonitoring && (
-              <button
-                onClick={onViewMonitoring}
-                className="flex items-center justify-center gap-2 bg-emerald-500/25 hover:bg-emerald-500/40 text-white font-black py-3.5 px-6 rounded-2xl transition-all shadow-md active:scale-95 text-xs sm:text-sm border border-white/35 backdrop-blur-md cursor-pointer"
-              >
-                <FileText className="w-5 h-5 text-yellow-200" />
-                月報モニタリング
-              </button>
-            )}
-            {onViewConference && (
-              <button
-                onClick={onViewConference}
-                className="flex items-center justify-center gap-2 bg-teal-500/25 hover:bg-teal-500/40 text-white font-black py-3.5 px-6 rounded-2xl transition-all shadow-md active:scale-95 text-xs sm:text-sm border border-white/35 backdrop-blur-md cursor-pointer"
-              >
-                <Building className="w-5 h-5 text-teal-200" />
-                会議・欠席照会
-              </button>
+            {profile?.role === 'admin' && (
+              <>
+                <button
+                  onClick={handleResetAndReseed}
+                  disabled={isResetting}
+                  title="デモデータをリセットして「訪問介護ステーションながら」の最新データを投入"
+                  className="flex items-center justify-center gap-2 bg-slate-900/40 hover:bg-slate-900/55 disabled:opacity-40 text-white/90 font-bold py-3.5 px-5 rounded-2xl transition-all shadow-md active:scale-95 text-xs border border-white/20 backdrop-blur-md cursor-pointer"
+                >
+                  <AlertTriangle className="w-4 h-4 text-amber-200" />
+                  {isResetting ? '処理中…' : 'デモデータ再投入'}
+                </button>
+                <button
+                  onClick={handleWipeOnly}
+                  disabled={isResetting}
+                  title="Firestoreの全データを完全削除（投入なし）"
+                  className="flex items-center justify-center gap-2 bg-red-500/40 hover:bg-red-500/60 disabled:opacity-40 text-white/90 font-bold py-3.5 px-5 rounded-2xl transition-all shadow-md active:scale-95 text-xs border border-white/20 backdrop-blur-md cursor-pointer"
+                >
+                  <AlertTriangle className="w-4 h-4 text-red-200" />
+                  全データ削除
+                </button>
+              </>
             )}
           </div>
         </div>
       </div>
 
       {/* Stats Grid */}
-      <div className="space-y-3.5 pt-4">
-        <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-          <span className="inline-block w-4 h-4 rounded-full bg-[#3a9c82]" />
-          📊 現在の事業所パフォーマンス指標（リアルタイム）
-        </h3>
-        <p className="text-xs text-slate-500 -mt-1 font-bold">
-          ※ 40〜50代のみなさまがパッと見て分かりやすいよう、大きく文字を表示しています。
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
-        <StatCard 
-          icon={<Users className="w-6 h-6 text-emerald-600" />} 
-          label="担当の利用者様" 
-          value={`${clients.length} 名`} 
-          subtext="現在元気にサービス継続中"
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 pt-2">
+        <StatCard
+          icon={<Users className="w-6 h-6 text-emerald-600" />}
+          label="担当の利用者様"
+          value={`${clients.length} 名`}
+          subtext=""
           onClick={onViewClients}
           colorClass={{
             bg: "bg-emerald-50/70 hover:bg-emerald-100/80",
@@ -405,11 +421,11 @@ export default function Dashboard({
             subtextColor: "text-emerald-600/80"
           }}
         />
-        <StatCard 
-          icon={<Calendar className="w-6 h-6 text-amber-600" />} 
-          label="本日の訪問予定" 
-          value={`${todaySchedules.length} 件`} 
-          subtext={todaySchedules.filter(s => !s.caregiverId).length > 0 ? `⚠️ 未割当の訪問が${todaySchedules.filter(s => !s.caregiverId).length}件あります` : "全てヘルパー割り当て済みです"}
+        <StatCard
+          icon={<Calendar className="w-6 h-6 text-amber-600" />}
+          label="本日の訪問予定"
+          value={`${todaySchedules.length} 件`}
+          subtext={todaySchedules.filter(s => !s.caregiverId).length > 0 ? `⚠ 未割当 ${todaySchedules.filter(s => !s.caregiverId).length} 件` : "全て割当済"}
           onClick={onViewSchedule}
           colorClass={{
             bg: "bg-amber-50/70 hover:bg-amber-100/80",
@@ -420,11 +436,11 @@ export default function Dashboard({
             subtextColor: todaySchedules.filter(s => !s.caregiverId).length > 0 ? "text-rose-600 font-extrabold" : "text-amber-600/80"
           }}
         />
-        <StatCard 
-          icon={<Clock className="w-6 h-6 text-sky-600" />} 
-          label="今月のサービス実績" 
-          value={`${recentRecords.length} 件`} 
-          subtext="当月の活動報告と実績の保存数"
+        <StatCard
+          icon={<Clock className="w-6 h-6 text-sky-600" />}
+          label="今月のサービス実績"
+          value={`${recentRecords.length} 件`}
+          subtext=""
           onClick={onViewHistory}
           colorClass={{
             bg: "bg-sky-50/70 hover:bg-sky-100/80",
@@ -436,11 +452,11 @@ export default function Dashboard({
           }}
         />
         {profile?.role === 'admin' ? (
-          <StatCard 
-            icon={<UserCircle className="w-6 h-6 text-purple-600" />} 
-            label="本日の勤務ヘルパー" 
-            value={`${staff.length} 名`} 
-            subtext="本日シフトが登録されているスタッフ"
+          <StatCard
+            icon={<UserCircle className="w-6 h-6 text-purple-600" />}
+            label="本日の勤務ヘルパー"
+            value={`${staff.length} 名`}
+            subtext=""
             onClick={onViewStaff || (() => {})}
             colorClass={{
               bg: "bg-purple-50/70 hover:bg-purple-100/80",
@@ -452,11 +468,11 @@ export default function Dashboard({
             }}
           />
         ) : (
-          <StatCard 
-            icon={<UserCircle className="w-6 h-6 text-purple-600" />} 
-            label="ログイン中のヘルパー" 
-            value={`${profile?.name || 'ゲスト'} 様`} 
-            subtext="本日も安全運転でいってらっしゃいませ"
+          <StatCard
+            icon={<UserCircle className="w-6 h-6 text-purple-600" />}
+            label="ログイン中"
+            value={`${profile?.name || 'ゲスト'} 様`}
+            subtext=""
             onClick={() => {}}
             colorClass={{
               bg: "bg-purple-50/70 hover:bg-purple-100/80",
@@ -468,11 +484,11 @@ export default function Dashboard({
             }}
           />
         )}
-        <StatCard 
-          icon={<Activity className="w-6 h-6 text-rose-600" />} 
-          label={`${monthlyStats.monthLabel}の訪問総数`} 
-          value={`${monthlyStats.total} 件`} 
-          subtext="今月これまでに訪問を行った累計数"
+        <StatCard
+          icon={<Activity className="w-6 h-6 text-rose-600" />}
+          label={`${monthlyStats.monthLabel}の訪問総数`}
+          value={`${monthlyStats.total} 件`}
+          subtext=""
           onClick={onViewSchedule}
           colorClass={{
             bg: "bg-rose-50/70 hover:bg-rose-100/80",
@@ -504,7 +520,7 @@ export default function Dashboard({
               )}
             </div>
           } 
-          subtext="身体・生活を含む各種サービスごとの内訳件数"
+          subtext=""
           onClick={onViewSchedule}
           colorClass={{
             bg: "bg-teal-50/70 hover:bg-teal-100/80",
@@ -518,10 +534,10 @@ export default function Dashboard({
       </div>
 
       {/* Main Core: Conversational AI Assistant & Operations Gate */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
+      <div className="grid grid-cols-1 gap-8">
+
         {/* Interactive Chat Window */}
-        <div className="lg:col-span-8 bg-white rounded-3xl border-2 border-rose-100/60 shadow-md flex flex-col h-[540px] overflow-hidden">
+        <div className="bg-white rounded-3xl border-2 border-rose-100/60 shadow-md flex flex-col h-[640px] overflow-hidden">
           {/* Assist Header */}
           <div className="bg-gradient-to-r from-rose-50 to-amber-50 p-4 border-b border-rose-100/60 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
@@ -530,10 +546,10 @@ export default function Dashboard({
               </div>
               <div>
                 <h3 className="text-sm sm:text-base font-black text-slate-800 flex items-center gap-1.5">
-                  あたたか介護相談アシスタント
-                  <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">会話がおすすめ</span>
+                  ながらAI
+                  <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">介護業務サポート</span>
                 </h3>
-                <p className="text-[11px] text-slate-500 font-bold">キャンセルの再割当ても、文章の作成も、気軽におしゃべり感覚でどうぞ</p>
+                <p className="text-[11px] text-slate-500 font-bold">キャンセル時の再割り当て、報告書の作成など、お気軽にご相談ください</p>
               </div>
             </div>
             <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[11px] font-black rounded-full animate-pulse">
@@ -584,7 +600,7 @@ export default function Dashboard({
               >
                 <div className="flex items-center gap-2 text-amber-800 font-extrabold text-sm">
                   <AlertTriangle className="w-5 h-5 text-amber-600" />
-                  💡 AIからのおすすめスケジュール調整・お助け提案 ({proposedActions.length}件)
+                  ながらAIからの提案 ({proposedActions.length}件)
                 </div>
                 <div className="space-y-2">
                   {proposedActions.map((action, i) => (
@@ -614,7 +630,7 @@ export default function Dashboard({
           <div className="p-4 border-t border-rose-50 bg-[#faf8f4] space-y-4 shrink-0">
             {/* Quick Actions buttons */}
             <div className="space-y-1">
-              <span className="text-[11px] text-slate-400 font-black block tracking-wider uppercase">✨ よく使う質問（押すだけで回答します）</span>
+              <span className="text-[11px] text-slate-400 font-black block tracking-wider uppercase">よく使う質問</span>
               <div className="flex flex-wrap gap-2 overflow-x-auto pb-1.5">
                 <button 
                   type="button" 
@@ -647,7 +663,11 @@ export default function Dashboard({
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSendMessage(inputText);
+                  // IME変換中のEnterは無視（変換確定で送信されてしまうのを防ぐ）
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage(inputText);
+                  }
                 }}
                 className="flex-1 px-4 py-2.5 text-sm bg-white border border-rose-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400 font-medium placeholder-slate-400"
               />
@@ -659,81 +679,6 @@ export default function Dashboard({
                 <Send className="w-4.5 h-4.5" />
               </button>
             </div>
-          </div>
-        </div>
-
-        {/* Static fast metrics & schedules preview summary */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* Quick Menu shortcuts panel */}
-          <div className="bg-white p-6 rounded-3xl border border-rose-100/50 shadow-sm space-y-5">
-            <div>
-              <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-1.5">
-                <span className="inline-block w-1.5 h-4 bg-rose-400 rounded" />
-                クイックお仕事メニュー
-              </h3>
-              <p className="text-[11px] text-slate-400 font-bold mt-0.5">よく使う画面へすぐに移動できます</p>
-            </div>
-            
-            <div className="grid grid-cols-1 gap-3">
-              <button
-                onClick={onViewClients}
-                className="flex items-center justify-between p-4 rounded-2xl bg-emerald-50/40 hover:bg-emerald-50/80 border-l-4 border-emerald-400 hover:border-emerald-500 text-left transition-all cursor-pointer group"
-              >
-                <div>
-                  <h4 className="text-sm font-black text-slate-800 group-hover:text-emerald-800">👥 利用者様一覧と設定</h4>
-                  <p className="text-[11px] text-slate-500 font-semibold mt-1">定期スケジュールの登録・和暦変換</p>
-                </div>
-                <ChevronRight className="w-4.5 h-4.5 text-slate-400 group-hover:translate-x-1 transition-transform" />
-              </button>
-
-              <button
-                onClick={onViewSchedule}
-                className="flex items-center justify-between p-4 rounded-2xl bg-amber-50/40 hover:bg-amber-50/80 border-l-4 border-amber-400 hover:border-amber-500 text-left transition-all cursor-pointer group"
-              >
-                <div>
-                  <h4 className="text-sm font-black text-slate-800 group-hover:text-amber-800">📅 当日の訪問スケジュール</h4>
-                  <p className="text-[11px] text-slate-500 font-semibold mt-1">ヘルパー配置・ドラッグ＆ドロップ調整</p>
-                </div>
-                <ChevronRight className="w-4.5 h-4.5 text-slate-400 group-hover:translate-x-1 transition-transform" />
-              </button>
-
-              {onViewMonitoring && (
-                <button
-                  onClick={onViewMonitoring}
-                  className="flex items-center justify-between p-4 rounded-2xl bg-rose-50/40 hover:bg-rose-50/80 border-l-4 border-rose-400 hover:border-rose-500 text-left transition-all cursor-pointer group"
-                >
-                  <div className="space-y-1">
-                    <span className="inline-block px-1.5 py-0.5 bg-rose-100/70 text-rose-800 text-[10px] font-black rounded">AI 目標解析</span>
-                    <h4 className="text-sm font-black text-slate-800 group-hover:text-rose-800">📄 モニタリング報告書</h4>
-                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">目標の自動マッチングと印刷</p>
-                  </div>
-                  <ChevronRight className="w-4.5 h-4.5 text-slate-400 group-hover:translate-x-1 transition-transform" />
-                </button>
-              )}
-
-              {onViewConference && (
-                <button
-                  onClick={onViewConference}
-                  className="flex items-center justify-between p-4 rounded-2xl bg-purple-50/40 hover:bg-purple-50/80 border-l-4 border-purple-400 hover:border-purple-500 text-left transition-all cursor-pointer group"
-                >
-                  <div className="space-y-1">
-                    <span className="inline-block px-1.5 py-0.5 bg-purple-100/70 text-purple-800 text-[10px] font-black rounded">AI 自動起案</span>
-                    <h4 className="text-sm font-black text-slate-800 group-hover:text-purple-800">✉️ サービス担当者会議支援</h4>
-                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">欠席することになった会議の照会回答書作成</p>
-                  </div>
-                  <ChevronRight className="w-4.5 h-4.5 text-slate-400 group-hover:translate-x-1 transition-transform" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-amber-50/40 p-6 rounded-3xl border-2 border-dashed border-amber-200/80 space-y-3.5">
-            <h4 className="font-black text-amber-900 text-xs uppercase tracking-widest flex items-center gap-1.5">
-              🔔 お知らせ & ワンポイント
-            </h4>
-            <p className="text-[11px] md:text-xs text-slate-600 leading-relaxed font-bold">
-              急な予定キャンセルが発生した場合は、当日にヘルパーの時間が空いてしまいます。AIのアシスタントが代わりに他の適任ヘルパーを自動的にマッチングしますので、上のボタンから一括適用を押して調整してください。
-            </p>
           </div>
         </div>
 

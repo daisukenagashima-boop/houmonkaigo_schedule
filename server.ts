@@ -3,12 +3,25 @@ import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
+import {
+  selectAssistantDemoResponse,
+  DEMO_CAREPLAN_PARSE,
+  DEMO_MONITORING,
+  DEMO_CONFERENCE_REPLY,
+  DEMO_GENERIC,
+} from "./src/lib/demoResponses";
 
 dotenv.config();
+
+// DEMO_MODE: true なら Gemini API を呼ばず、事前応答を返す（商談デモ用）
+const DEMO_MODE = process.env.DEMO_MODE === "true";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  if (DEMO_MODE) {
+    console.log("🎭 DEMO_MODE=true: Gemini API calls are mocked with pre-defined responses.");
+  }
 
   // JSON Body Parser for API requests
   app.use(express.json());
@@ -36,6 +49,10 @@ async function startServer() {
         return res.status(400).json({ error: "Prompt is required" });
       }
 
+      if (DEMO_MODE) {
+        return res.json({ text: DEMO_GENERIC });
+      }
+
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
       }
@@ -56,6 +73,11 @@ async function startServer() {
   app.post("/api/gemini/parse-careplan", async (req, res) => {
     try {
       const { text, fileData, mimeType } = req.body;
+
+      if (DEMO_MODE) {
+        return res.json({ text: DEMO_CAREPLAN_PARSE });
+      }
+
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
       }
@@ -111,6 +133,11 @@ async function startServer() {
   app.post("/api/gemini/generate-monitoring", async (req, res) => {
     try {
       const { clientName, careLevel, period, currentService, goals, records } = req.body;
+
+      if (DEMO_MODE) {
+        return res.json({ text: DEMO_MONITORING });
+      }
+
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
       }
@@ -173,6 +200,11 @@ ${records ? JSON.stringify(records) : "日々の訪問記録はありません�
   app.post("/api/gemini/generate-conference-reply", async (req, res) => {
     try {
       const { clientName, caregiverName, inquiryText, caregiverNotes } = req.body;
+
+      if (DEMO_MODE) {
+        return res.json({ text: DEMO_CONFERENCE_REPLY });
+      }
+
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
       }
@@ -216,6 +248,16 @@ ${caregiverNotes}
   app.post("/api/gemini/assistant-chat", async (req, res) => {
     try {
       const { messages, schedules, clients, staff } = req.body;
+
+      if (DEMO_MODE) {
+        const lastUserMessage = Array.isArray(messages)
+          ? [...messages].reverse().find((m: any) => m.role === "user")
+          : null;
+        const userText = lastUserMessage?.parts?.[0]?.text || "";
+        const text = selectAssistantDemoResponse(userText);
+        return res.json({ text });
+      }
+
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
       }

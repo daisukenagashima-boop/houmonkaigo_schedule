@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AuthProvider, AuthGuard, useAuth } from './components/AuthGuard';
 import Dashboard from './components/Dashboard';
 import ClientList from './components/ClientList';
+import ClientDetail from './components/ClientDetail';
 import RecordForm from './components/RecordForm';
 import RecordHistory from './components/RecordHistory';
 import ScheduleList from './components/ScheduleList';
@@ -26,7 +27,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { Schedule } from './types';
 
-type View = 'dashboard' | 'clients' | 'history' | 'schedule' | 'staff' | 'monitoring' | 'conference';
+type View = 'dashboard' | 'clients' | 'client-detail' | 'history' | 'schedule' | 'staff' | 'monitoring' | 'conference';
 
 function MainLayout() {
   const { profile, signOut } = useAuth();
@@ -34,6 +35,16 @@ function MainLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isRecordFormOpen, setIsRecordFormOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+
+  const goToClientDetail = (clientId: string) => {
+    setSelectedClientId(clientId);
+    setCurrentView('client-detail');
+  };
+  const goBackToClientList = () => {
+    setSelectedClientId(null);
+    setCurrentView('clients');
+  };
 
   const navItems = [
     { id: 'dashboard', label: 'ダッシュボード', icon: LayoutDashboard },
@@ -70,7 +81,13 @@ function MainLayout() {
       case 'schedule':
         return <ScheduleList onSelectSchedule={handleSelectSchedule} />;
       case 'clients':
-        return <ClientList />;
+        return <ClientList onSelectClient={goToClientDetail} />;
+      case 'client-detail':
+        return selectedClientId ? (
+          <ClientDetail clientId={selectedClientId} onBack={goBackToClientList} />
+        ) : (
+          <ClientList onSelectClient={goToClientDetail} />
+        );
       case 'history':
         return <RecordHistory />;
       case 'staff':
