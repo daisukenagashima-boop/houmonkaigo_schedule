@@ -4,35 +4,44 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  const { messages, schedules, clients, staff } = req.body || {};
+
+  const extractUserText = () => {
+    const lastUserMessage = Array.isArray(messages)
+      ? [...messages].reverse().find((m: any) => m.role === 'user')
+      : null;
+    return lastUserMessage?.parts?.[0]?.text || '';
+  };
+
+  // DEMO_MODE: 事前応答に直行
+  if (DEMO_MODE) {
+    return res.status(200).json({ text: selectAssistantDemoResponse(extractUserText()) });
+  }
+
+  // 実API呼び出し
   try {
-    const { messages, schedules, clients, staff } = req.body || {};
-
-    if (DEMO_MODE) {
-      const lastUserMessage = Array.isArray(messages)
-        ? [...messages].reverse().find((m: any) => m.role === 'user')
-        : null;
-      const userText = lastUserMessage?.parts?.[0]?.text || '';
-      return res.status(200).json({ text: selectAssistantDemoResponse(userText) });
-    }
-
-    const systemPrompt = `あなたは訪問介護事業所の対話型AIアシスタント「ながらAI」です。
-管理者の負担を減らし、訪問介護事業所の円滑な運営をサポートします。
+    const systemPrompt = `あなたは訪問介護事業所「訪問介護ステーションながら」の対話型AIアシスタント「ながらAI」です。
+管理者の業務負担を減らし、訪問介護事業所の円滑な運営をサポートする役割です。
 
 【現在のデータ】
-利用者: ${JSON.stringify(clients?.map((c: any) => ({ id: c.id, name: c.name, address: c.address })))}
-スタッフ: ${JSON.stringify(staff?.map((s: any) => ({ id: s.id, name: s.name })))}
-本日の訪問: ${JSON.stringify(schedules?.map((s: any) => ({ id: s.id, clientId: s.clientId, caregiverId: s.caregiverId, startTime: s.startTime, endTime: s.endTime, careType: s.careType, status: s.status })))}
+利用者一覧: ${JSON.stringify(clients?.slice(0, 30)?.map((c: any) => ({ id: c.id, name: c.name, address: c.address })))}
+スタッフ一覧: ${JSON.stringify(staff?.map((s: any) => ({ id: s.id, name: s.name })))}
+本日の訪問予定: ${JSON.stringify(schedules?.map((s: any) => ({ id: s.id, clientId: s.clientId, caregiverId: s.caregiverId, startTime: s.startTime, endTime: s.endTime, careType: s.careType, status: s.status })))}
 
-statusが "cancelled" の案件があれば、その caregiverId に未割り当て(caregiverIdが空)の別の訪問予定をあてがう reassign アクションを提案してください。
+【ふるまい】
+- 介護現場のサ責さん視点で、温かく具体的に答えてください
+- statusが "cancelled" の案件があれば、その caregiverId に未割り当ての別の訪問予定をあてがう reassign アクションを積極的に提案
+- 提案を1クリック適用できるよう、本文末尾に下記JSONブロックを添付してください
 
-提案は本文の最後に下記JSONブロックで添付できます:
 \`\`\`json
 {
   "actions": [
-    { "type": "reassign", "scheduleId": "...", "caregiverId": "...", "caregiverName": "...", "reason": "..." }
+    { "type": "reassign", "scheduleId": "対象schedule_id", "caregiverId": "あてがうstaff_id", "caregiverName": "スタッフ名", "reason": "提案理由" }
   ]
 }
-\`\`\``;
+\`\`\`
+
+会話履歴は配列形式で渡されます。ユーザーの直近の質問に答えてください。`;
 
     const ai = getAI();
     const response = await ai.models.generateContent({
@@ -42,7 +51,11 @@ statusが "cancelled" の案件があれば、その caregiverId に未割り当
     });
     return res.status(200).json({ text: response.text });
   } catch (error: any) {
-    console.error('Assistant Chat Error:', error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    // フォールバック: 事前応答（レート制限・キー無効・ネットワーク不調などをカバー）
+    console.warn('Gemini API failed, falling back to demo response:', error.message);
+    return res.status(200).json({
+      text: selectAssistantDemoResponse(extractUserText()),
+      _fallback: true,
+    });
   }
 }

@@ -4,13 +4,13 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  const { text, fileData, mimeType } = req.body || {};
+
+  if (DEMO_MODE) {
+    return res.status(200).json({ text: DEMO_CAREPLAN_PARSE });
+  }
+
   try {
-    const { text, fileData, mimeType } = req.body || {};
-
-    if (DEMO_MODE) {
-      return res.status(200).json({ text: DEMO_CAREPLAN_PARSE });
-    }
-
     const systemPrompt = `あなたは介護プラン(ケアプラン)を解析して、訪問介護計画書向けの目標・サービス内容を抽出するAIアシスタントです。
 入力された文章あるいはファイル(OCR/PDF)の情報を精査し、以下のJSONフォーマットで回答してください。
 必ず、目標（最大3つ）とその評価の起点となる情報、現在提供されているサービスを特定してJSON形式で返却してください。
@@ -45,7 +45,7 @@ export default async function handler(req: any, res: any) {
     });
     return res.status(200).json({ text: response.text });
   } catch (error: any) {
-    console.error('Parse CarePlan Error:', error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    console.warn('Parse CarePlan failed, falling back to demo response:', error.message);
+    return res.status(200).json({ text: DEMO_CAREPLAN_PARSE, _fallback: true });
   }
 }
