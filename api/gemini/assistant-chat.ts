@@ -1,4 +1,4 @@
-import { DEMO_MODE, getAI, selectAssistantDemoResponse } from './_helpers';
+import { DEMO_MODE, getAI, selectAssistantDemoResponse } from './_helpers.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
