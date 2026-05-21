@@ -1,4 +1,4 @@
-import { DEMO_MODE, getAI, DEMO_CONFERENCE_REPLY } from '../_lib/gemini';
+import { DEMO_MODE, getAI, DEMO_CONFERENCE_REPLY } from './_helpers';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
