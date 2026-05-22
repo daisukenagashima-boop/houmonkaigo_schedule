@@ -1,0 +1,20 @@
+{
+  "name": "訪問介護ステーションながら",
+  "short_name": "ながらかいご",
+  "description": "訪問介護業務サポートシステム",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#10b981",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
